@@ -15,14 +15,19 @@ title: This is a github note
 
 # 私有 API Gateway 在企业场景中的应用
 
-- [[#前言|前言]]
-- [[#架构描述|架构描述]]
-- [[#搭建实验环境|搭建实验环境]]
-	- [[#搭建实验环境#环境准备|环境准备]]
-	- [[#搭建实验环境#后端应用|后端应用]]
-	- [[#搭建实验环境#API Gateway|API Gateway]]
-- [[#结论|结论]]
-- [[#参考资料|参考资料]]
+- [前言](#%E5%89%8D%E8%A8%80)
+- [架构描述](#%E6%9E%B6%E6%9E%84%E6%8F%8F%E8%BF%B0)
+- [搭建实验环境](#%E6%90%AD%E5%BB%BA%E5%AE%9E%E9%AA%8C%E7%8E%AF%E5%A2%83)
+	- [环境准备](#%E7%8E%AF%E5%A2%83%E5%87%86%E5%A4%87)
+	- [后端应用](#%E5%90%8E%E7%AB%AF%E5%BA%94%E7%94%A8)
+	- [API Gateway](#api-gateway)
+		- [步骤 1-2](#%E6%AD%A5%E9%AA%A4-1-2)
+		- [步骤 4](#%E6%AD%A5%E9%AA%A4-4)
+		- [步骤 5-7](#%E6%AD%A5%E9%AA%A4-5-7)
+		- [步骤 9-10](#%E6%AD%A5%E9%AA%A4-9-10)
+		- [步骤 12](#%E6%AD%A5%E9%AA%A4-12)
+- [结论](#%E7%BB%93%E8%AE%BA)
+- [参考资料](#%E5%8F%82%E8%80%83%E8%B5%84%E6%96%99)
 
 
 ## 前言
@@ -595,7 +600,7 @@ LOGGROUP_ARN=${LOGGROUP_ARN%:*}
 - 更新现有 API 的 Stage 配置，定制 Access Log 日志输出格式
 ```sh
 echo ${API_ID}
-echo $LOGGROUP_ARN
+echo ${LOGGROUP_ARN}
 
 echo '{ 
 	"requestId": "$context.requestId", 

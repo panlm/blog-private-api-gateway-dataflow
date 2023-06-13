@@ -1,12 +1,12 @@
 
 # 私有 API Gateway 在企业场景中的应用
 
-## blog
+## blog version (20230508)
 
-https://aws.amazon.com/cn/blogs/china/private-api-gateway-in-enterprise-scenarios/
+- https://aws.amazon.com/cn/blogs/china/private-api-gateway-in-enterprise-scenarios/
 
 
-## github
+## github version (20230508)
 
 - [TC-private-apigw-dataflow](TC-private-apigw-dataflow.md)
 
