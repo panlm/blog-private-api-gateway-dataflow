@@ -428,7 +428,6 @@ watch -g -n 60 aws apigateway get-vpc-link \
 ####  步骤 9-10 
 
 **API with VPC Link**
-
 ![apigw-dataflow-png-2.png](apigw-dataflow-png-2.png)
 
 - 使用下面代码块创建类似上图的 API

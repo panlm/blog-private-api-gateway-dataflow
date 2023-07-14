@@ -73,27 +73,27 @@ This article verifies the following:
 
 The latest version of the code covered in this article can be obtained from [Github](https://github.com/panlm/blog-private-api-gateway-dataflow). After completing this section, you will create the following resources:
 - Ingress VPC - Use your default VPC in your region
-            - Cloud9 - Interactive experimental environment
-            - Elastic Load Balancer - External ALB for receiving external requests
-            - VPC Endpoint - for private APIs
+	- Cloud9 - Interactive experimental environment
+	- Elastic Load Balancer - External ALB for receiving external requests
+	- VPC Endpoint - for private APIs
 - App VPC - created automatically when the EKS cluster is created
-            - EKS Cluster - Backend application runs on it
-            - Elastic Load Balancer - Internal ALB for Ingress
-            - Elastic Load Balancer - Internal NLB for VPC Link
+	- EKS Cluster - Backend application runs on it
+	- Elastic Load Balancer - Internal ALB for Ingress
+	- Elastic Load Balancer - Internal NLB for VPC Link
 - Additional Resources
-            - Route53 Hosted Zone - DNS
-            - Amazon Certificate Manager - Certificates required in this article
-            - CloudWatch Logs - Used to collect API Gateway Access Logs
+	- Route53 Hosted Zone - DNS
+	- Amazon Certificate Manager - Certificates required in this article
+	- CloudWatch Logs - Used to collect API Gateway Access Logs
 
 ### Prepare Environment
 
 This article uses an AWS Global account to set up in region us-east-2. Follow these steps to create the relevant resources:
 - Interactive environment using AWS Cloud9 as a lab environment ([link](http://aws-labs.panlm.xyz/20-cloud9/setup-cloud9-for-eks.html))
 - Create an EKS cluster called `ekscluster1` ([link](http://aws-labs.panlm.xyz/100-eks-infra/110-eks-cluster/eks-public-access-cluster.html#create-eks-cluster))
-	- Install the plugin AWS Load Balancer Controller ([link](http://aws-labs.panlm.xyz/100-eks-infra/130-eks-network/aws-load-balancer-controller.html#install -))
-	- Install the ExternalDNS plugin ([link](http://aws-labs.panlm.xyz/100-eks-infra/130-eks-network/externaldns-for-route53.html#install -))
-- First of all, ensure you have your own domain name and domain registrar. Secondly, create a Hosted Zone under Route53 in current account, and add the NS records of the Hosted Zone to the upstream domain name server to achieve second-level domain name resolution ([link]( http://aws-labs.panlm.xyz/100-eks-infra/130-eks-network/externaldns-for-route53.html#setup-hosted-zone -))
-- Create a certificate with wildcard in ACM and add the appropriate DNS records in Route53 to verify the certificate ([link](http://aws-labs.panlm.xyz/900-others/990-command-line/acm-cmd.html#create-certificate -))
+	- Install the plugin AWS Load Balancer Controller ([link](http://aws-labs.panlm.xyz/100-eks-infra/130-eks-network/aws-load-balancer-controller.html#install-))
+	- Install the ExternalDNS plugin ([link](http://aws-labs.panlm.xyz/100-eks-infra/130-eks-network/externaldns-for-route53.html#install-))
+- First of all, ensure you have your own domain name and domain registrar. Secondly, create a Hosted Zone under Route53 in current account, and add the NS records of the Hosted Zone to the upstream domain name server to achieve second-level domain name resolution ([link]( http://aws-labs.panlm.xyz/100-eks-infra/130-eks-network/externaldns-for-route53.html#setup-hosted-zone-))
+- Create a certificate with wildcard in ACM and add the appropriate DNS records in Route53 to verify the certificate ([link](http://aws-labs.panlm.xyz/900-others/990-command-line/acm-cmd.html#create-certificate-))
 - Verify that the application exposed successfully and the certificate is valid ([link](http://aws-labs.panlm.xyz/100-eks-infra/130-eks-network/externaldns-for-route53.html#verify)). After that, you could delete the namespace (`verify`)  in the EKS cluster
 
 ### Backend Applications
@@ -195,7 +195,7 @@ Let's go through the components and configuration details when the requests proc
 - 5 - Create a private API, configure a resource policy, then deploy the API to stage `v1`. The stage name will be used as part of the mapping in the next step;
 - 6 - To create a custom domain name, you need to match the test domain name `poc.xxx.com` and have a certificate for that domain name in ACM. Create mapping and map the domain name to a specific stage. If the request URL has path pattern, you need to fill in as well;
 - 7 - To create a Rest type VPC Link, you need to create an NLB and an ALB type Target Group in advance, and register the ALB of the downstream application to this Target Group;
-- 8 - (Optional) Using Lambda authorizer. Once the authentication is successful, the necessary information can be obtained from the context ([link](https://docs.aws.amazon.com/apigateway/latest/developerguide/api-gateway-mapping-template-reference.html#context-variable-reference:~:text = context.authorizer.property)). For example, using the Access Token that comes with the Lambda authentication request, after success, the user's specific details can be obtained from the Access Token and provided as a header for direct use by downstream applications;
+- 8 - (Optional) Using Lambda authorizer. Once the authentication is successful, the necessary information can be obtained from the context ([link](https://docs.aws.amazon.com/apigateway/latest/developerguide/api-gateway-mapping-template-reference.html#context-variable-reference:~:text=context.authorizer.property)). For example, using the Access Token that comes with the Lambda authentication request, after success, the user's specific details can be obtained from the Access Token and provided as a header for direct use by downstream applications;
 - 9 - When request is sent to the Internal ALB, the certificate on Internal ALB is a self-signed certificate and imported into ACM in advance (without full certificate chain in ACM). There is no problem using such certificate on ALB, but if request comes from API Gateway, problems occurs;
 	- First, API Gateway cannot verify self-signed certificates by default unless `tlsConfig/InsecureSkipVerification` is enabled ([link](https://aws.amazon.com/premiumsupport/knowledge-center/api-gateway-ssl-certificate-errors/)). Certificates will be verified successfully only when it includes full certificate chain in ACM.
 	- Second, each method and resource in each private API needs to be enabled individually via the command line, making work easier through this script ([link](http://aws-labs.panlm.xyz/900-others/990-command-line/script-api-resource-method.html)). Also, the format can be modified by exporting `API Gateway extensions` and re-importing the coverage;
@@ -426,7 +426,6 @@ watch -g -n 60 aws apigateway get-vpc-link \
 #### Step 9-10
 
 **API with VPC Link**
-
 ![apigw-dataflow-png-2.png](apigw-dataflow-png-2.png)
 
 - Use the following code block to create an API similar to the screenshot above
