@@ -77,7 +77,7 @@ Amazon API Gateway 可以直接暴露到公网访问，无需前置任何负载�
 - Ingress VPC - 使用所在区域中的默认 VPC
 	- Cloud9 - 交互实验环境
 	- Elastic Load Balancer - External ALB 用于接收外部请求
-	- VPC Endpoint -  用于私有 API Gateway
+	- VPC Endpoint -  用于私有 API 
 - App VPC - 创建 EKS 集群时自动创建
 	- EKS Cluster - 后端应用运行
 	- Elastic Load Balancer - Internal ALB 用于应用 Ingress 
@@ -88,6 +88,7 @@ Amazon API Gateway 可以直接暴露到公网访问，无需前置任何负载�
 	- CloudWatch Logs - 用于收集 API Gateway 的 Access Log
 
 ### 环境准备
+
 本文使用 AWS Global 的账号，在区域 us-east-2 中搭建。按照下面步骤创建相关的资源：
 - 使用 AWS Cloud9 作为实验环境的交互环境 ([链接](http://aws-labs.panlm.xyz/20-cloud9/setup-cloud9-for-eks.html))
 - 创建 EKS 集群，名为 `ekscluster1` ([链接](http://aws-labs.panlm.xyz/100-eks-infra/110-eks-cluster/eks-public-access-cluster.html#create-eks-cluster))
@@ -98,6 +99,7 @@ Amazon API Gateway 可以直接暴露到公网访问，无需前置任何负载�
 - 验证应用发布可用以及证书有效 ([链接](http://aws-labs.panlm.xyz/100-eks-infra/130-eks-network/externaldns-for-route53.html#verify))，如果验证成功，可以从 EKS 集群中删除名为 `verify`  的命名空间
 
 ### 后端应用
+
 - 使用以下模版配置文件在 EKS 集群中创建 `httpbin` 应用，方便获取到请求中包含的必要信息
 ```sh
 echo ${CERTIFICATE_ARN}
@@ -183,7 +185,8 @@ kubectl apply --filename httpbin.yaml -n httpbin
 ```
 
 ### API Gateway
-我们来先梳理下请求经过 API Gateway 过程中需要经过那些组件以及相应的配置细节信息，包括需要绑定的域名以及证书信息，这样会有利于后续的故障诊断。
+
+我们来先梳理下请求经过 API Gateway 过程中需要经过那些组件以及相应的配置细节信息，包括需要绑定的域名以及证书信息，这样会有利于理解。
 
 ![apigw-dataflow-png-1.png](apigw-dataflow-png-1.png)
 
@@ -203,6 +206,7 @@ kubectl apply --filename httpbin.yaml -n httpbin
 - 12 - 验证，通过测试域名 `poc.xxx.com` 直接访问私有 API；
 
 #### 步骤 1-2 
+
 **External ALB**
 - 在 Cloud9 所在的 VPC 中，创建外部负载均衡
 ```sh
@@ -319,6 +323,7 @@ aws route53 list-resource-record-sets --hosted-zone-id ${ZONE_ID} --query "Resou
 ```
 
 #### 步骤 4
+
 **API Gateway VPCE**
 - 在 Cloud9 所在的 VPC 中，创建 API Gateway 的 VPC Endpoint，这是使用私有 API 的前置条件
 ```sh
@@ -355,6 +360,7 @@ aws elbv2 register-targets \
 ```
 
 #### 步骤 5-7
+
 **VPC Link**
 - 在 EKS 所在的 VPC 中，为应用的内部负载均衡 (ALB) 创建 NLB
 ```sh
@@ -420,6 +426,7 @@ watch -g -n 60 aws apigateway get-vpc-link \
 ```
 
 ####  步骤 9-10 
+
 **API with VPC Link**
 
 ![apigw-dataflow-png-2.png](apigw-dataflow-png-2.png)
@@ -629,6 +636,7 @@ aws apigateway update-stage \
 ```
 
 #### 步骤 12
+
 **验证应用可用**
 - 从其他设备浏览器访问下面链接时，将请求 API `/httpbin`。该 API 启用 `Use Proxy Integration` 
 ```sh
@@ -638,7 +646,7 @@ echo "curl https://${POC_HOSTNAME}/${URI_PREFIX}/httpbin"
 ![apigw-dataflow-png-3.png](apigw-dataflow-png-3.png)
 
 **查看请求的数据流**
-- 从上图 origin 字段可以看到完整的请求数据流
+- 从上图 `origin` 字段可以看到完整的请求数据流
 	- 第一个地址为客户端地址；
 	- 第二个地址为 Cloud9 的 VPC 中，外部负载均衡（External ALB）的内网地址；
 	- 第三个地址为 EKS 的 VPC 中，网络负载均衡（NLB）的内网地址；

@@ -8,6 +8,6 @@
 
 ## github version (20230508)
 
-- [TC-private-apigw-dataflow](TC-private-apigw-dataflow.md)
-
+- [Private API Scenarios in Enterprise Customers（中文版）](TC-private-apigw-dataflow.md)
+- [Private API Scenarios in Enterprise Customers （English）](TC-private-apigw-dataflow-en.md)
 
