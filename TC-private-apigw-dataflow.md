@@ -1,6 +1,6 @@
 ---
-title: private-apigw-dataflow
-description: private-apigw-dataflow
+title: 私有 API 在企业场景中的应用
+description: 私有 API 在企业场景中的应用
 chapter: true
 created: 2023-03-15 11:49:27.324
 last_modified: 2023-05-04 08:48:07.786
@@ -13,12 +13,19 @@ title: This is a github note
 
 ```
 
-# 私有 API Gateway 在企业场景中的应用
+# 私有 API 在企业场景中的应用
 
 - [前言](#%E5%89%8D%E8%A8%80)
 - [架构描述](#%E6%9E%B6%E6%9E%84%E6%8F%8F%E8%BF%B0)
 - [搭建实验环境](#%E6%90%AD%E5%BB%BA%E5%AE%9E%E9%AA%8C%E7%8E%AF%E5%A2%83)
 	- [环境准备](#%E7%8E%AF%E5%A2%83%E5%87%86%E5%A4%87)
+		- [准备 AWS Cloud9 实验环境](#%E5%87%86%E5%A4%87-aws-cloud9-%E5%AE%9E%E9%AA%8C%E7%8E%AF%E5%A2%83)
+		- [创建 EKS 集群](#%E5%88%9B%E5%BB%BA-eks-%E9%9B%86%E7%BE%A4)
+		- [安装 AWS Load Balancer Controller](#%E5%AE%89%E8%A3%85-aws-load-balancer-controller)
+		- [安装 ExternalDNS](#%E5%AE%89%E8%A3%85-externaldns)
+		- [设置 Hosted Zone](#%E8%AE%BE%E7%BD%AE-hosted-zone)
+		- [创建相关证书](#%E5%88%9B%E5%BB%BA%E7%9B%B8%E5%85%B3%E8%AF%81%E4%B9%A6)
+		- [验证环境就绪](#%E9%AA%8C%E8%AF%81%E7%8E%AF%E5%A2%83%E5%B0%B1%E7%BB%AA)
 	- [后端应用](#%E5%90%8E%E7%AB%AF%E5%BA%94%E7%94%A8)
 	- [API Gateway](#api-gateway)
 		- [步骤 1-2](#%E6%AD%A5%E9%AA%A4-1-2)
@@ -89,14 +96,805 @@ Amazon API Gateway 可以直接暴露到公网访问，无需前置任何负载�
 
 ### 环境准备
 
-本文使用 AWS Global 的账号，在区域 us-east-2 中搭建。按照下面步骤创建相关的资源：
-- 使用 AWS Cloud9 作为实验环境的交互环境 ([链接](http://aws-labs.panlm.xyz/20-cloud9/setup-cloud9-for-eks.html))
-- 创建 EKS 集群，名为 `ekscluster1` ([链接](http://aws-labs.panlm.xyz/100-eks-infra/110-eks-cluster/eks-public-access-cluster.html#create-eks-cluster))
-	- 安装插件 AWS Load Balancer Controller ([链接](http://aws-labs.panlm.xyz/100-eks-infra/130-eks-network/aws-load-balancer-controller.html#install-))
-	- 安装插件 ExternalDNS ([链接](http://aws-labs.panlm.xyz/100-eks-infra/130-eks-network/externaldns-for-route53.html#install-))
-- 首先确保你有自己域名和域名服务器 (Domain Registrar)，然后在当前测试账号的 Route53 下创建 Hosted Zone，并且在上游域名服务器添加该 Hosted Zone 的 NS 记录，以实现二级域名解析 ([链接](http://aws-labs.panlm.xyz/100-eks-infra/130-eks-network/externaldns-for-route53.html#setup-hosted-zone-))
-- 在 ACM 中创建带有通配符的证书，然后在 Route53 中添加相应的 DNS 记录以验证证书有效性 ([链接](http://aws-labs.panlm.xyz/900-others/990-command-line/acm-cmd.html#create-certificate-))
-- 验证应用发布可用以及证书有效 ([链接](http://aws-labs.panlm.xyz/100-eks-infra/130-eks-network/externaldns-for-route53.html#verify))，如果验证成功，可以从 EKS 集群中删除名为 `verify`  的命名空间
+本文使用 AWS Global 的账号，在区域 us-east-2 中搭建。按照下面步骤创建所需的资源。
+
+#### 准备 AWS Cloud9 实验环境 
+([链接](http://aws-labs.panlm.xyz/20-cloud9/setup-cloud9-for-eks.html))
+
+-  点击[这里](https://console.aws.amazon.com/cloudshell) 运行 cloudshell，执行代码块创建 cloud9 测试环境 
+```sh
+# name=<give your cloud9 a name>
+datestring=$(date +%Y%m%d-%H%M)
+echo ${name:=cloud9-$datestring}
+
+# VPC_ID=<your vpc id> 
+# ensure you have public subnet in it
+DEFAULT_VPC_ID=$(aws ec2 describe-vpcs \
+  --filter Name=is-default,Values=true \
+  --query 'Vpcs[0].VpcId' --output text \
+  --region ${AWS_DEFAULT_REGION})
+VPC_ID=${VPC_ID:=$DEFAULT_VPC_ID}
+
+if [[ ! -z ${VPC_ID} ]]; then
+  FIRST_SUBNET=$(aws ec2 describe-subnets \
+    --filters "Name=vpc-id,Values=${VPC_ID}" \
+    --query 'Subnets[?(AvailabilityZone==`'"${AWS_DEFAULT_REGION}a"'` && MapPublicIpOnLaunch==`true`)].SubnetId' \
+    --output text \
+    --region ${AWS_DEFAULT_REGION})
+  aws cloud9 create-environment-ec2 \
+    --name ${name} \
+    --image-id amazonlinux-2-x86_64 \
+    --instance-type m5.large \
+    --subnet-id ${FIRST_SUBNET%% *} \
+    --automatic-stop-time-minutes 10080 \
+    --region ${AWS_DEFAULT_REGION} |tee /tmp/$$
+  echo "Open URL to access your Cloud9 Environment:"
+  C9_ID=$(cat /tmp/$$ |jq -r '.environmentId')
+  echo "https://${AWS_DEFAULT_REGION}.console.aws.amazon.com/cloud9/ide/${C9_ID}"
+else
+  echo "you have no default vpc in $AWS_DEFAULT_REGION"
+fi
+
+```
+- 点击输出的 URL 链接，打开 cloud9 测试环境
+
+- 下面代码块包含一些基本设置，包括：
+	- 安装常用的软件
+	 - 修改 cloud9 磁盘大小 ([link](https://docs.aws.amazon.com/cloud9/latest/user-guide/move-environment.html#move-environment-resize))
+```sh
+# set size as your expectation, otherwize 100g as default volume size
+# size=200
+
+# install others
+sudo yum -y install jq gettext bash-completion moreutils wget
+
+# install awscli
+curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+echo A |unzip awscliv2.zip
+sudo ./aws/install --update
+echo "complete -C '/usr/local/bin/aws_completer' aws" >> ~/.bash_profile
+
+# remove existed aws
+if [[ $? -eq 0 ]]; then
+  sudo yum remove -y awscli
+  source ~/.bash_profile
+  aws --version
+fi
+
+# install ssm session plugin
+curl "https://s3.amazonaws.com/session-manager-downloads/plugin/latest/linux_64bit/session-manager-plugin.rpm" -o "session-manager-plugin.rpm"
+sudo yum install -y session-manager-plugin.rpm
+
+# your default region 
+export AWS_DEFAULT_REGION=$(curl -s 169.254.169.254/latest/dynamic/instance-identity/document | jq -r '.region')
+
+if [[ -c /dev/nvme0 ]]; then
+  wget -qO- https://github.com/amazonlinux/amazon-ec2-utils/raw/main/ebsnvme-id >/tmp/ebsnvme-id
+  VOLUME_ID=$(sudo python3 /tmp/ebsnvme-id -v /dev/nvme0 |awk '{print $NF}')
+  DEVICE_NAME=/dev/nvme0n1
+else
+  C9_INST_ID=$(curl 169.254.169.254/latest/meta-data/instance-id)
+  VOLUME_ID=$(aws ec2 describe-volumes --filters Name=attachment.instance-id,Values=${C9_INST_ID} --query "Volumes[0].VolumeId" --output text)
+  DEVICE_NAME=/dev/xvda
+fi
+
+aws ec2 modify-volume --volume-id ${VOLUME_ID} --size ${size:-100}
+sleep 10
+sudo growpart ${DEVICE_NAME} 1
+sudo xfs_growfs -d /
+
+if [[ $? -eq 1 ]]; then
+  ROOT_PART=$(df |grep -w / |awk '{print $1}')
+  sudo resize2fs ${ROOT_PART}
+fi
+
+```
+
+- 安装 eks 相关的常用软件 
+```sh
+# install kubectl with +/- 1 cluster version 1.23.15 / 1.22.17 / 1.24.15 / 1.25.11
+# refer: https://kubernetes.io/releases/
+# sudo curl --location -o /usr/local/bin/kubectl "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+sudo curl --silent --location -o /usr/local/bin/kubectl "https://storage.googleapis.com/kubernetes-release/release/v1.25.11/bin/linux/amd64/kubectl"
+
+# 1.22.x version of kubectl
+# sudo curl --silent --location -o /usr/local/bin/kubectl "https://storage.googleapis.com/kubernetes-release/release/v1.22.11/bin/linux/amd64/kubectl"
+
+sudo chmod +x /usr/local/bin/kubectl
+
+kubectl completion bash >>  ~/.bash_completion
+. /etc/profile.d/bash_completion.sh
+. ~/.bash_completion
+alias k=kubectl 
+complete -F __start_kubectl k
+echo "alias k=kubectl" >> ~/.bashrc
+echo "complete -F __start_kubectl k" >> ~/.bashrc
+
+# install eksctl
+# consider install eksctl version 0.89.0
+# if you have older version yaml 
+# https://eksctl.io/announcements/nodegroup-override-announcement/
+curl --location "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" | tar xz -C /tmp
+sudo mv -v /tmp/eksctl /usr/local/bin
+eksctl completion bash >> ~/.bash_completion
+. /etc/profile.d/bash_completion.sh
+. ~/.bash_completion
+
+# helm newest version (3.10.3)
+curl -sSL https://raw.githubusercontent.com/helm/helm/master/scripts/get-helm-3 | bash
+# helm 3.8.2 (helm 3.9.0 will have issue #10975)
+# wget https://get.helm.sh/helm-v3.8.2-linux-amd64.tar.gz
+# tar xf helm-v3.8.2-linux-amd64.tar.gz
+# sudo mv linux-amd64/helm /usr/local/bin/helm
+helm version --short
+
+# install aws-iam-authenticator 0.5.12 
+wget -O aws-iam-authenticator https://github.com/kubernetes-sigs/aws-iam-authenticator/releases/download/v0.5.12/aws-iam-authenticator_0.5.12_linux_amd64
+chmod +x ./aws-iam-authenticator
+sudo mv ./aws-iam-authenticator /usr/local/bin/
+
+# install kube-no-trouble
+sh -c "$(curl -sSL https://git.io/install-kubent)"
+
+# install kubectl convert plugin
+curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl-convert"
+curl -LO "https://dl.k8s.io/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl-convert.sha256"
+echo "$(cat kubectl-convert.sha256) kubectl-convert" | sha256sum --check
+sudo install -o root -g root -m 0755 kubectl-convert /usr/local/bin/kubectl-convert
+rm kubectl-convert kubectl-convert.sha256
+
+# option install jwt-cli
+# https://github.com/mike-engel/jwt-cli/blob/main/README.md
+# sudo yum -y install cargo
+# cargo install jwt-cli
+# sudo ln -sf ~/.cargo/bin/jwt /usr/local/bin/jwt
+
+# install flux & fluxctl
+curl -s https://fluxcd.io/install.sh | sudo -E bash
+flux -v
+. <(flux completion bash)
+
+# sudo wget -O /usr/local/bin/fluxctl $(curl https://api.github.com/repos/fluxcd/flux/releases/latest | jq -r ".assets[] | select(.name | test(\"linux_amd64\")) | .browser_download_url")
+# sudo chmod 755 /usr/local/bin/fluxctl
+# fluxctl version
+# fluxctl identity --k8s-fwd-ns flux
+
+```
+
+- 直接执行下面代码块可能遇到权限不够的告警，需要：
+	- 如果你有 workshop 的 Credentials ，直接先复制粘贴到命令行，再执行下列步骤；
+	- 或者，如果自己账号的 cloud9，先用环境变量方式（`AWS_ACCESS_KEY_ID` 和 `AWS_SECRET_ACCESS_KEY`）保证有足够权限执行 
+	- 下面代码块包括：
+		- 禁用 cloud9 中的 credential 管理，从 `~/.aws/credentials` 中删除 `aws_session_token=` 行
+		- 分配管理员权限 role 到 cloud9 instance
+```sh
+aws cloud9 update-environment  --environment-id $C9_PID --managed-credentials-action DISABLE
+rm -vf ${HOME}/.aws/credentials
+
+# ---
+export AWS_PAGER=""
+export AWS_DEFAULT_REGION=$(curl -s 169.254.169.254/latest/dynamic/instance-identity/document | jq -r '.region')
+C9_INST_ID=$(curl 169.254.169.254/latest/meta-data/instance-id)
+ROLE_NAME=adminrole-$RANDOM
+MY_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+
+cat > ec2.json <<-EOF
+{
+    "Effect": "Allow",
+    "Principal": {
+        "Service": "ec2.amazonaws.com"
+    },
+    "Action": "sts:AssumeRole"
+}
+EOF
+STATEMENT_LIST=ec2.json
+
+for i in WSParticipantRole WSOpsRole TeamRole OpsRole ; do
+  aws iam get-role --role-name $i >/dev/null 2>&1
+  if [[ $? -eq 0 ]]; then
+    envsubst >$i.json <<-EOF
+{
+  "Effect": "Allow",
+  "Principal": {
+    "AWS": "arn:aws:iam::${MY_ACCOUNT_ID}:role/$i"
+  },
+  "Action": "sts:AssumeRole"
+}
+EOF
+    STATEMENT_LIST=$(echo ${STATEMENT_LIST} "$i.json")
+  fi
+done
+
+jq -n '{Version: "2012-10-17", Statement: [inputs]}' ${STATEMENT_LIST} > trust.json
+echo ${STATEMENT_LIST}
+rm -f ${STATEMENT_LIST}
+
+# create role
+aws iam create-role --role-name ${ROLE_NAME} \
+  --assume-role-policy-document file://trust.json
+aws iam attach-role-policy --role-name ${ROLE_NAME} \
+  --policy-arn "arn:aws:iam::aws:policy/AdministratorAccess"
+
+instance_profile_arn=$(aws ec2 describe-iam-instance-profile-associations \
+  --filter Name=instance-id,Values=$C9_INST_ID \
+  --query IamInstanceProfileAssociations[0].IamInstanceProfile.Arn \
+  --output text)
+if [[ ${instance_profile_arn} == "None" ]]; then
+  # create one
+  aws iam create-instance-profile \
+    --instance-profile-name ${ROLE_NAME}
+  sleep 10
+  # attach role to it
+  aws iam add-role-to-instance-profile \
+    --instance-profile-name ${ROLE_NAME} \
+    --role-name ${ROLE_NAME}
+  sleep 10
+  # attach instance profile to ec2
+  aws ec2 associate-iam-instance-profile \
+    --iam-instance-profile Name=${ROLE_NAME} \
+    --instance-id ${C9_INST_ID}
+else
+  existed_role_name=$(aws iam get-instance-profile \
+    --instance-profile-name ${instance_profile_arn##*/} \
+    --query 'InstanceProfile.Roles[0].RoleName' \
+    --output text)
+  aws iam attach-role-policy --role-name ${existed_role_name} \
+    --policy-arn "arn:aws:iam::aws:policy/AdministratorAccess"
+fi
+
+```
+
+- 在 cloud9 中，重新打开一个 terminal 窗口，并验证权限符合预期。上面代码块将创建一个 instance profile ，并将关联名为 `adminrole-xxx` 的 role，或者在 cloud9 现有的 role 上关联 `AdministratorAccess` role policy。
+```sh
+aws sts get-caller-identity
+```
+
+#### 创建 EKS 集群
+创建 EKS 集群，名为 `ekscluster1` ([链接](http://aws-labs.panlm.xyz/100-eks-infra/110-eks-cluster/eks-public-access-cluster.html#create-eks-cluster))
+
+- 将在下面区域创建 EKS 集群 
+```sh
+export AWS_PAGER=""
+export AWS_DEFAULT_REGION=$(curl -s 169.254.169.254/latest/dynamic/instance-identity/document | jq -r '.region')
+export AWS_REGION=${AWS_DEFAULT_REGION}
+
+export CLUSTER_NAME=ekscluster1
+export EKS_VERSION=1.25
+CLUSTER_NUM=$(eksctl get cluster |wc -l)
+export CIDR="10.25${CLUSTER_NUM}.0.0/16"
+
+```
+
+- 执行下面代码创建配置文件
+	- 注意集群名称
+	- 注意使用的 AZ 符合你所在的区域
+```sh
+AZS=($(aws ec2 describe-availability-zones \
+--query 'AvailabilityZones[].ZoneName' --output text |awk '{print $1,$2}'))
+export AZ0=${AZS[0]}
+export AZ1=${AZS[1]}
+
+cat >$$.yaml <<-'EOF'
+---
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+
+metadata:
+  name: "${CLUSTER_NAME}"
+  region: "${AWS_REGION}"
+  version: "${EKS_VERSION}"
+
+availabilityZones: ["${AZ0}", "${AZ1}"]
+
+vpc:
+  cidr: "${CIDR}"
+  clusterEndpoints:
+    privateAccess: true
+    publicAccess: true
+
+cloudWatch:
+  clusterLogging:
+    enableTypes: ["*"]
+
+# secretsEncryption:
+#   keyARN: ${MASTER_ARN}
+
+managedNodeGroups:
+- name: managed-ng
+  minSize: 2
+  maxSize: 5
+  desiredCapacity: 2
+  instanceType: m5.large
+  ssh:
+    enableSsm: true
+  privateNetworking: true
+
+addons:
+- name: vpc-cni 
+  version: latest
+- name: coredns
+  version: latest 
+- name: kube-proxy
+  version: latest
+
+iam:
+  withOIDC: true
+  serviceAccounts:
+  - metadata:
+      name: aws-load-balancer-controller
+      namespace: kube-system
+    wellKnownPolicies:
+      awsLoadBalancerController: true
+  - metadata:
+      name: ebs-csi-controller-sa
+      namespace: kube-system
+    wellKnownPolicies:
+      ebsCSIController: true
+  - metadata:
+      name: efs-csi-controller-sa
+      namespace: kube-system
+    wellKnownPolicies:
+      efsCSIController: true
+  - metadata:
+      name: cloudwatch-agent
+      namespace: amazon-cloudwatch
+    attachPolicyARNs:
+    - "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
+  - metadata:
+      name: fluent-bit
+      namespace: amazon-cloudwatch
+    attachPolicyARNs:
+    - "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
+EOF
+cat $$.yaml |envsubst '$CLUSTER_NAME $AWS_REGION $AZ0 $AZ1 $EKS_VERSION $CIDR ' > cluster-${CLUSTER_NAME}.yaml
+
+```
+
+- 创建集群，预计需要 20 分钟
+```sh
+eksctl create cluster -f cluster-${CLUSTER_NAME}.yaml
+
+```
+
+#### 安装 AWS Load Balancer Controller 
+([链接](http://aws-labs.panlm.xyz/100-eks-infra/130-eks-network/aws-load-balancer-controller.html#install-))
+
+- Install AWS Load Balancer Controller
+```sh
+echo ${CLUSTER_NAME}
+echo ${AWS_REGION}
+echo ${AWS_DEFAULT_REGION}
+export AWS_PAGER=""
+
+eksctl utils associate-iam-oidc-provider \
+  --cluster ${CLUSTER_NAME} \
+  --approve
+
+# curl -o iam_policy.json https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/v2.4.1/docs/install/iam_policy.json
+git clone https://github.com/kubernetes-sigs/aws-load-balancer-controller.git
+
+# check iamserviceaccount has been create by eksctl
+aws cloudformation describe-stacks --stack-name eksctl-${CLUSTER_NAME}-addon-iamserviceaccount-kube-system-aws-load-balancer-controller 2>&1 1>/dev/null
+if [[ $? -ne 0 ]]; then
+
+if [[ ${AWS_REGION%%-*} == "cn" ]]; then 
+  # aws china region
+  IAM_POLICY_TEMPLATE=iam_policy_cn.json 
+else
+  # aws commercial region
+  IAM_POLICY_TEMPLATE=iam_policy.json 
+fi
+cp aws-load-balancer-controller/docs/install/${IAM_POLICY_TEMPLATE} .
+
+policy_name=AWSLoadBalancerControllerIAMPolicy-`date +%m%d%H%M`
+policy_arn=$(aws iam create-policy \
+  --policy-name ${policy_name}  \
+  --policy-document file://${IAM_POLICY_TEMPLATE} \
+  --query 'Policy.Arn' \
+  --output text)
+
+eksctl create iamserviceaccount \
+  --cluster=${CLUSTER_NAME} \
+  --namespace=kube-system \
+  --name=aws-load-balancer-controller \
+  --role-name=${policy_name} \
+  --attach-policy-arn=${policy_arn} \
+  --override-existing-serviceaccounts \
+  --approve
+
+# check iamserviceaccount has been create by eksctl
+fi
+
+helm repo add eks https://aws.github.io/eks-charts
+helm repo update
+
+# following helm cmd will fail if you use 3.9.0 version
+# downgrade to helm 3.8.2
+# and another solved issue is here: [[ingress-controller-lab-issue]]
+if [[ ${AWS_REGION%%-*} == "cn" ]]; then 
+  # aws china region
+  helm upgrade -i aws-load-balancer-controller eks/aws-load-balancer-controller \
+	-n kube-system \
+	--set clusterName=${CLUSTER_NAME} \
+	--set serviceAccount.create=false \
+	--set serviceAccount.name=aws-load-balancer-controller \
+	--set image.repository=961992271922.dkr.ecr.cn-northwest-1.amazonaws.com.cn/amazon/aws-load-balancer-controller \
+	# --set region=${AWS_DEFAULT_REGION} \
+	# --set vpcId=${VPC_ID} 
+else
+  # aws commercial region
+  helm install aws-load-balancer-controller eks/aws-load-balancer-controller \
+	-n kube-system \
+	--set clusterName=${CLUSTER_NAME} \
+	--set serviceAccount.create=false \
+	--set serviceAccount.name=aws-load-balancer-controller 
+fi
+
+kubectl get deployment -n kube-system aws-load-balancer-controller
+
+```
+
+#### 安装 ExternalDNS 
+([链接](http://aws-labs.panlm.xyz/100-eks-infra/130-eks-network/externaldns-for-route53.html#install-))
+
+- 创建所需要的服务账号
+	- 确保 EKS 集群名称正确 
+	- 确保使用正确的 Region 
+	- 确保上游域名已存在，本例中将创建 `api0413.aws.panlm.xyz` 域名，因此确保 `aws.panlm.xyz` 已存在
+```sh
+echo ${CLUSTER_NAME}
+echo ${AWS_REGION}
+DOMAIN_NAME=api0413.aws.panlm.xyz
+EXTERNALDNS_NS=externaldns
+export AWS_PAGER=""
+
+# create namespace if it does not yet exist
+kubectl get namespaces | grep -q $EXTERNALDNS_NS || \
+  kubectl create namespace $EXTERNALDNS_NS
+
+cat >externaldns-policy.json <<-EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "route53:ChangeResourceRecordSets"
+      ],
+      "Resource": [
+        "arn:aws:route53:::hostedzone/*"
+      ]
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "route53:ListHostedZones",
+        "route53:ListResourceRecordSets"
+      ],
+      "Resource": [
+        "*"
+      ]
+    }
+  ]
+}
+EOF
+
+POLICY_NAME=AllowExternalDNSUpdates-${RANDOM}
+aws iam create-policy --policy-name ${POLICY_NAME} --policy-document file://externaldns-policy.json
+
+# example: arn:aws:iam::XXXXXXXXXXXX:policy/AllowExternalDNSUpdates
+export POLICY_ARN=$(aws iam list-policies \
+ --query 'Policies[?PolicyName==`'"${POLICY_NAME}"'`].Arn' --output text)
+
+eksctl create iamserviceaccount \
+  --cluster ${CLUSTER_NAME} \
+  --name "external-dns" \
+  --namespace ${EXTERNALDNS_NS:-"default"} \
+  --override-existing-serviceaccounts \
+  --attach-policy-arn $POLICY_ARN \
+  --approve
+
+```
+
+- 使用上述服务账号安装 ExternalDNS 
+```sh
+echo ${EXTERNALDNS_NS}
+echo ${DOMAIN_NAME}
+echo ${AWS_REGION}
+
+envsubst >externaldns-with-rbac.yaml <<-EOF
+# comment out sa if it was previously created
+# apiVersion: v1
+# kind: ServiceAccount
+# metadata:
+#   name: external-dns
+#   labels:
+#     app.kubernetes.io/name: external-dns
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: external-dns
+  labels:
+    app.kubernetes.io/name: external-dns
+rules:
+  - apiGroups: [""]
+    resources: ["services","endpoints","pods","nodes"]
+    verbs: ["get","watch","list"]
+  - apiGroups: ["extensions","networking.k8s.io"]
+    resources: ["ingresses"]
+    verbs: ["get","watch","list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: external-dns-viewer
+  labels:
+    app.kubernetes.io/name: external-dns
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: external-dns
+subjects:
+  - kind: ServiceAccount
+    name: external-dns
+    namespace: ${EXTERNALDNS_NS} # change to desired namespace: externaldns, kube-addons
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: external-dns
+  labels:
+    app.kubernetes.io/name: external-dns
+spec:
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: external-dns
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: external-dns
+    spec:
+      serviceAccountName: external-dns
+      containers:
+        - name: external-dns
+          image: registry.k8s.io/external-dns/external-dns:v0.13.2
+          args:
+            - --source=service
+            - --source=ingress
+            - --domain-filter=${DOMAIN_NAME} # will make ExternalDNS see only the hosted zones matching provided domain, omit to process all available hosted zones
+            - --provider=aws
+            - --policy=upsert-only # would prevent ExternalDNS from deleting any records, omit to enable full synchronization
+            - --aws-zone-type=public # only look at public hosted zones (valid values are public, private or no value for both)
+            - --registry=txt
+            - --txt-owner-id=external-dns
+          env:
+            - name: AWS_DEFAULT_REGION
+              value: ${AWS_REGION} # change to region where EKS is installed
+     # # Uncommend below if using static credentials
+     #        - name: AWS_SHARED_CREDENTIALS_FILE
+     #          value: /.aws/credentials
+     #      volumeMounts:
+     #        - name: aws-credentials
+     #          mountPath: /.aws
+     #          readOnly: true
+     #  volumes:
+     #    - name: aws-credentials
+     #      secret:
+     #        secretName: external-dns
+EOF
+
+kubectl create --filename externaldns-with-rbac.yaml \
+  --namespace ${EXTERNALDNS_NS:-"default"}
+
+```
+
+#### 设置 Hosted Zone
+首先确保你有自己域名和域名服务器 (Domain Registrar)，然后在当前测试账号的 Route53 下创建 Hosted Zone，并且在上游域名服务器添加该 Hosted Zone 的 NS 记录，以实现二级域名解析 ([链接](http://aws-labs.panlm.xyz/100-eks-infra/130-eks-network/externaldns-for-route53.html#setup-hosted-zone-))
+
+- 本例中将创建 `api0413.aws.panlm.xyz` 域名，因此确保 `aws.panlm.xyz` 已存在
+-  执行下面命令创建 Hosted Zone， 然后手工添加 NS 记录到上游的域名服务器 domain registrar 中 
+```sh
+echo ${DOMAIN_NAME}
+
+aws route53 create-hosted-zone --name "${DOMAIN_NAME}." \
+  --caller-reference "external-dns-test-$(date +%s)"
+
+ZONE_ID=$(aws route53 list-hosted-zones-by-name --output json \
+  --dns-name "${DOMAIN_NAME}." --query HostedZones[0].Id --out text)
+
+aws route53 list-resource-record-sets --output text \
+  --hosted-zone-id $ZONE_ID --query \
+  "ResourceRecordSets[?Type == 'NS'].ResourceRecords[*].Value | []" | tr '\t' '\n'
+
+###
+# copy above output  
+# add NS record on your upstream domain registrar
+# set TTL to 172800
+###
+
+```
+
+#### 创建相关证书
+在 ACM 中创建带有通配符的证书，然后在 Route53 中添加相应的 DNS 记录以验证证书有效性 ([链接](http://aws-labs.panlm.xyz/900-others/990-command-line/acm-cmd.html#create-certificate-))
+
+- 创建并通过添加 dns 记录验证证书 
+```sh
+echo ${DOMAIN_NAME}
+# DOMAIN_NAME=api0413.aws.panlm.xyz
+
+CERTIFICATE_ARN=$(aws acm request-certificate \
+--domain-name "*.${DOMAIN_NAME}" \
+--validation-method DNS \
+--query 'CertificateArn' --output text)
+
+sleep 10
+aws acm describe-certificate --certificate-arn ${CERTIFICATE_ARN} |tee /tmp/acm.$$.1
+CERT_CNAME_NAME=$(cat /tmp/acm.$$.1 |jq -r '.Certificate.DomainValidationOptions[0].ResourceRecord.Name')
+CERT_CNAME_VALUE=$(cat /tmp/acm.$$.1 |jq -r '.Certificate.DomainValidationOptions[0].ResourceRecord.Value')
+
+envsubst >certificate-route53-record.json <<-EOF
+{
+  "Comment": "UPSERT a record for certificate xxx ",
+  "Changes": [
+    {
+      "Action": "UPSERT",
+      "ResourceRecordSet": {
+        "Name": "${CERT_CNAME_NAME}",
+        "Type": "CNAME",
+        "TTL": 300,
+        "ResourceRecords": [
+          {
+            "Value": "${CERT_CNAME_VALUE}"
+          }
+        ]
+      }
+    }
+  ]
+}
+EOF
+
+ZONE_ID=$(aws route53 list-hosted-zones-by-name \
+--dns-name "${DOMAIN_NAME}." \
+--query HostedZones[0].Id --output text) 
+aws route53 change-resource-record-sets \
+--hosted-zone-id ${ZONE_ID} \
+--change-batch file://certificate-route53-record.json 
+aws route53 list-resource-record-sets \
+--hosted-zone-id ${ZONE_ID} \
+--query "ResourceRecordSets[?Name == '${CERT_CNAME_NAME}']"
+
+```
+
+- 等待状态转变成 SUCCESS 
+```sh
+# wait ValidationStatus to SUCCESS
+aws acm describe-certificate \
+--certificate-arn ${CERTIFICATE_ARN} \
+--query 'Certificate.DomainValidationOptions[0]' 
+
+```
+
+#### 验证环境就绪
+验证应用发布可用以及证书有效 ([链接](http://aws-labs.panlm.xyz/100-eks-infra/130-eks-network/externaldns-for-route53.html#verify))，如果验证成功，可以从 EKS 集群中删除名为 `verify`  的命名空间
+
+- create namespace in eks
+```sh
+NS=verify
+kubectl create ns ${NS}
+```
+
+***service sample***
+
+- create nlb (no more clb, 20230423) with service definition
+```sh
+envsubst >verify-nginx.yaml <<-EOF
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx
+  annotations:
+    external-dns.alpha.kubernetes.io/hostname: nginx.${DOMAIN_NAME}
+    service.beta.kubernetes.io/aws-load-balancer-scheme: "internet-facing"
+spec:
+  type: LoadBalancer
+  ports:
+  - port: 80
+    name: http
+    targetPort: 80
+  selector:
+    app: nginx
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx
+spec:
+  selector:
+    matchLabels:
+      app: nginx
+  template:
+    metadata:
+      labels:
+        app: nginx
+    spec:
+      containers:
+      - image: nginx
+        name: nginx
+        ports:
+        - containerPort: 80
+          name: http
+EOF
+
+kubectl create --filename verify-nginx.yaml -n ${NS:-default}
+
+```
+
+- wait NLB available and execute
+```sh
+aws route53 list-resource-record-sets --output json --hosted-zone-id $ZONE_ID \
+  --query "ResourceRecordSets[?Name == 'nginx.${DOMAIN_NAME}.']|[?Type == 'A']"
+
+aws route53 list-resource-record-sets --output json --hosted-zone-id $ZONE_ID \
+  --query "ResourceRecordSets[?Name == 'nginx.${DOMAIN_NAME}.']|[?Type == 'TXT']"
+
+dig +short nginx.${DOMAIN_NAME}. A
+
+curl http://nginx.${DOMAIN_NAME}
+
+```
+
+***ingress sample***
+
+- ensure certificate is existed and create alb 
+```sh
+echo ${CERTIFICATE_ARN}
+
+envsubst >verify-nginx-ingress.yaml <<-EOF
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: nginx
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/tags: Environment=dev,Team=test,Application=nginx
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
+    alb.ingress.kubernetes.io/ssl-redirect: '443'
+    alb.ingress.kubernetes.io/certificate-arn: ${CERTIFICATE_ARN}
+spec:
+  ingressClassName: alb
+  rules:
+    - host: server.${DOMAIN_NAME}
+      http:
+        paths:
+          - backend:
+              service:
+                name: nginx
+                port:
+                  number: 80
+            path: /
+            pathType: Prefix
+EOF
+
+kubectl create --filename verify-nginx-ingress.yaml -n ${NS:-default}
+
+```
+
+- wait alb available and execute
+```sh
+aws route53 list-resource-record-sets --output json --hosted-zone-id $ZONE_ID \
+  --query "ResourceRecordSets[?Name == 'server.${DOMAIN_NAME}.']"
+
+dig +short server.${DOMAIN_NAME}. A
+
+curl https://server.${DOMAIN_NAME}
+
+```
+
 
 ### 后端应用
 
@@ -190,12 +988,12 @@ kubectl apply --filename httpbin.yaml -n httpbin
 
 ![apigw-dataflow-png-1.png](apigw-dataflow-png-1.png)
 
-- 1 -  DNS 服务器上，将测试域名 `poc.xxx.com` 解析到外部的 ALB 上；
+- 1 -  DNS 服务器上，将测试域名 `poc.api0413.aws.panlm.xyz` 解析到外部的 ALB 上；
 - 2 - 公有 CA 签发的证书（简称公有证书），配置在外部的 ALB 上，并且指定路径规则将请求进行转发；
 - 3 - （可选）此处可以选配安全设备进行 7 层的流量过滤和防护。例如，上一步将请求转发到安全设备特定端口，该端口对应的规则将对所有进入流量进行过滤，然后继续将请求转发到下一步，即 API Gateway 的 VPC Endpoint；
 - 4 - 创建 API Gateway 的 VPC Endpoint ，且禁用 `Enable private DNS names`；
 - 5 - 创建私有 API ，配置 Resource Policy ，然后部署 API 到 Stage `v1` ，下一步中将使用这个 Stage 名称作为 Mapping 的一部分；
-- 6 - 创建定制域名，需要与测试域名 `poc.xxx.com` 一致，且在 ACM 中有该域名的证书。创建 Mapping，将域名映射到特定 Stage 上，如果请求 URL 带有路径信息（ Path Pattern ），则需要填入对应路径信息；
+- 6 - 创建定制域名，需要与测试域名 `poc.api0413.aws.panlm.xyz` 一致，且在 ACM 中有该域名的证书。创建 Mapping，将域名映射到特定 Stage 上，如果请求 URL 带有路径信息（ Path Pattern ），则需要填入对应路径信息；
 - 7 - 创建 Rest 类型 VPC Link，需要提前创建 NLB 以及 ALB 类型的 Target Group，并将下游应用的 ALB 注册到该 Target Group 上；
 - 8 - （可选）使用 Lambda 验证鉴权。一旦鉴权成功，便可从上下文中获取到必要的信息 ([链接](https://docs.aws.amazon.com/apigateway/latest/developerguide/api-gateway-mapping-template-reference.html#context-variable-reference:~:text=context.authorizer.property))。比如，使用 Lambda 鉴权请求中自带的 Access Token，成功之后可以从 Access Token 中获取到用户具体详情，作为 header 提供下游应用直接使用；
 - 9 - 请求发送到内部应用 ALB 时，ALB 使用的证书是自签名证书，且提前导入到 ACM 中（未包含完整证书链），这样的证书使用在 ALB 上是没问题的，但是作为 API Gateway 下游请求的话，则会遇到问题；
@@ -203,7 +1001,7 @@ kubectl apply --filename httpbin.yaml -n httpbin
 	- 其次， 每个 API 的每个 Resource 的每个 Method 都需要单独通过命令行启用，通过这个脚本简化工作 ([链接](http://aws-labs.panlm.xyz/900-others/990-command-line/script-api-resource-method.html))。另外，可以通过导出带 `API Gateway extensions` 的格式修改，并重新导入覆盖；
 - 10 - 导入其他需要测试的 API ，提前提升上限 `Resources per API` （默认 300，详见[链接](https://docs.aws.amazon.com/apigateway/latest/developerguide/limits.html)）；
 - 11 - 应用 ALB，证书需要满足步骤 9；
-- 12 - 验证，通过测试域名 `poc.xxx.com` 直接访问私有 API；
+- 12 - 验证，通过测试域名 `poc.api0413.aws.panlm.xyz` 直接访问私有 API；
 
 #### 步骤 1-2 
 
@@ -362,7 +1160,7 @@ aws elbv2 register-targets \
 #### 步骤 5-7
 
 **VPC Link**
-- 在 EKS 所在的 VPC 中，为应用的内部负载均衡 (ALB) 创建 NLB
+- 在 EKS 所在的 VPC 中，为应用的内部负载均衡 (Internal ALB) 创建 NLB
 ```sh
 # get eks vpc id
 EKS_VPC_ID=$(aws eks describe-cluster \
