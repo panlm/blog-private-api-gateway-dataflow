@@ -75,6 +75,7 @@ This article verifies the following:
 - All certificates is valid in each components on this data flow, and the application services published on Internal ALB can use self-signed certificates;
 - Based on corporate security compliance, data traffic needs to always be transmitted within the customer's VPC and within the AWS trusted network without transmission to the Internal accidentally;
 - Passing headers to downstream applications for comsumption, and customizing the Access Log with specific headers.
+- WAF does not include in this lab, reference [here](fake-waf-on-ec2-forwarding-https) for configuration
 
 ## Set up your lab environment
 
