@@ -13,6 +13,6 @@
 
 ## appendix
 
-- [Using NGINX simulate WAF to forward HTTPS requests](fake-waf-on-ec2-forwarding-https)
+- [Using NGINX simulate WAF to forward HTTPS requests](fake-waf-on-ec2-forwarding-https.md)
 
 
