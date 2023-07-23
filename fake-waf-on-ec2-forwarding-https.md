@@ -24,7 +24,8 @@ title: This is a github note
 
 ## Diagram
 
-In blog's diagram, we mentioned when you expose private API, need using ALB + WAF to keep it security. But we do not include this part, we added API gateway endpoint's IP Addresses to ALB directly. If you try to simulate WAF component in this scenario, follow one of next two chapters, the "Layer 7 forwarding with NGINX" is prefer.
+In blog's diagram, we mentioned when you expose private API, need using ALB + WAF to keep it security. But we do not include this part in lab, we added API gateway endpoint's IP addresses to ALB directly. 
+If you try to simulate WAF component in this scenario, follow one of next two chapters to create fake WAF (the "Layer 7 forwarding with NGINX" is prefer) and then add fake WAF's IP address to ALB instead of endpoint's IP addresses.
 
 ## Layer 7 forwarding with NGINX (prefer)
 
@@ -116,9 +117,10 @@ useradd -g www www
 172.31.46.247 - - [17/Jul/2023:08:39:46 +0000] "GET / HTTP/1.1" 403 23 "-" "ELB-HealthChecker/2.0"
 ```
 - put the fake WAF in the AZ in which your ALB enabled if your ALB not enabled in every AZ
-
+![fake-waf-on-ec2-forwarding-https-png-1.png](fake-waf-on-ec2-forwarding-https-png-1.png)
 
 ## Layer 4 forwarding with iptables
+this option could only forward traffic to one of endpoint ip addresses, not forward traffic to vpce domain name. 
 
 - need `ip_forward=1` in OS
 ```sh
@@ -159,5 +161,9 @@ done
 iptables -t nat -A POSTROUTING -p tcp --dport 443 -s 172.31.0.0/16 -d $vpce_ip -o eth0 -j MASQUERADE;
 ```
 
+
+## refer
+- https://docs.nginx.com/nginx/admin-guide/security-controls/securing-http-traffic-upstream/
+- https://www.alibabacloud.com/blog/how-to-use-nginx-as-an-https-forward-proxy-server_595799
 
 

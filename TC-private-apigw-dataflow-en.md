@@ -1457,7 +1457,8 @@ echo "curl https://${POC_HOSTNAME}/${URI_PREFIX}/httpbin/anything"
 
 **Check the headers available in downstream applications**
 - As you can see in the image above, the headers returned by the downstream application include the header `xff` that we customized in the API to obtain the `X-Forwarded-For` header in the request. At the same time, this header can be saved to the Access Log (as shown below) for security audit purposes;
-- Since we use a private API, the `$context.identity.sourceIp` that comes with API Gateway is always the internal IP address for External ALB. Get more detailed information through this custom header `xff`;
+- Since we use a private API, the `$context.identity.sourceIp` that comes with API Gateway is always the internal IP address for External ALB (or WAF IP address. Last IP address when traffic enter the endpoint). Get more detailed information through this custom header `xff`;
+- the `origin` in the image above is the internal IP address of the NLB in the EKS VPC;
 
 ![apigw-dataflow-png-5.png](apigw-dataflow-png-5.png)
 
