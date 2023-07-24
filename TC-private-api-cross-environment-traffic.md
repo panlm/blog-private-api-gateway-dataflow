@@ -15,16 +15,23 @@ title: This is a github note
 
 # TC-private-api-cross-environment-traffic
 
-```toc
-min_depth: 2
-max_depth: 4
-```
+- [architecture summary](#architecture-summary)
+- [setup your lab environment](#setup-your-lab-environment)
+	- [prep vpc](#prep-vpc)
+	- [prep cross env nlb in c9 vpc](#prep-cross-env-nlb-in-c9-vpc)
+	- [prep api](#prep-api)
+
 
 ## architecture summary
 
 ![apigw2-apigw.drawio.png](apigw2-apigw.drawio.png)
 
 ## setup your lab environment
+
+### before lab
+
+please complete lab and then go to next step
+https://github.com/panlm/blog-private-api-gateway-dataflow/blob/main/TC-private-apigw-dataflow.md
 
 ### prep vpc
 
@@ -36,7 +43,7 @@ export AWS_DEFAULT_REGION=${AWS_REGION}
 export AWS_PAGER=""
 ```
 
-- create tgw
+- create TGW
 ```sh
 tmp=$(mktemp)
 aws ec2 create-transit-gateway \
@@ -50,7 +57,7 @@ watch -g -n 60 aws ec2 describe-transit-gateways \
 
 ^yq2usv
 
-- attach cloud9 vpc to tgw
+- attach cloud9 VPC to TGW
 ```sh
 C9_INST_ID=$(curl -s http://169.254.169.254/latest/meta-data/instance-id)
 C9_VPC_ID=$(aws ec2 describe-instances \
@@ -75,7 +82,7 @@ aws ec2 create-transit-gateway-vpc-attachment \
 
 ^x1asti
 
-- attach eks vpc to tgw
+- attach eks VPC to TGW
 ```sh
 EKS_VPC_ID=$(aws eks describe-cluster \
 --name ${CLUSTER_NAME} \
@@ -97,7 +104,7 @@ aws ec2 create-transit-gateway-vpc-attachment \
 --tag-specifications 'ResourceType=transit-gateway-attachment,Tags=[{Key=Name,Value=att-'"${VPC_ID}"'}]'
 ```
 
-- edit route table in vpc
+- edit route table in VPC
 ```sh
 (echo $EKS_VPC_ID
 echo $C9_CIDR
@@ -119,7 +126,7 @@ done
 
 ^lyckqs
 
-- create another vpc and attached to tgw (refer [link](http://aws-labs.panlm.xyz/20-cloud9/create-standard-vpc-for-lab-in-china-region.html))
+- create another VPC and attached to TGW (refer [link](http://aws-labs.panlm.xyz/20-cloud9/create-standard-vpc-for-lab-in-china-region.html))
 ```sh
 UNIQ_STR=$(date +%Y%m%d-%H%M%S)
 BUCKET_NAME=$(aws s3 mb s3://panlm-${UNIQ_STR} |awk '{print $2}')
@@ -181,7 +188,7 @@ while true ; do
 done
 ```
 
-- make c9 vpc to access new vpc
+- make c9 VPC to access new VPC
 ```sh
 (echo $C9_VPC_ID
 echo "${CIDR}.0.0/16") |xargs -n 2 |while read VPC_ID TARGET_CIDR ; do
@@ -199,17 +206,17 @@ done
 done
 ```
 
-### prep cross env nlb in c9 vpc
+### prep cross env NLB in c9 VPC
 ```sh
 UNIQ_STR=$RANDOM
 PORT443=443
 TMP=$(mktemp)
 echo ${AWS_DEFAULT_REGION}
 
-# aws route53 list-hosted-zones
+# DOMAIN_NAME=$(aws route53 list-hosted-zones --query 'HostedZones[].Name' --output text |sed 's/\.$//')
 echo ${DOMAIN_NAME} 
 
-# aws acm list-certificates
+# CERTIFICATE_ARN=$(aws acm list-certificates --query 'CertificateSummaryList[].CertificateArn' --output text)
 echo ${CERTIFICATE_ARN}
 
 # get cloud9 vpc
@@ -269,9 +276,9 @@ aws elbv2 register-targets \
 ```
 
 ### prep api
-- using internal domain name `internal.api0722.aws.panlm.xyz`
+- using internal domain name CNAME to cross env NLB
 ```sh
-INTERNAL_HOSTNAME="internal2.${DOMAIN_NAME}"
+INTERNAL_HOSTNAME="internal.${DOMAIN_NAME}"
 echo ${nlb_crossenv_dnsname}
 
 envsubst >internal-route53-record.json <<-EOF
@@ -304,7 +311,30 @@ aws route53 change-resource-record-sets --hosted-zone-id ${ZONE_ID} --change-bat
 aws route53 list-resource-record-sets --hosted-zone-id ${ZONE_ID} --query "ResourceRecordSets[?Name == '${INTERNAL_HOSTNAME}.']"
 ```
 
-- create custome domain name in api gateway, and point to existed api's stage v1
+- create custom domain name in api gateway, and point to existed api's stage v1
+![[TC-private-api-cross-environment-traffic-png-1.png]]
+
+## cross env access
+- create ec2 instance in new vpc (`10.129.0.0/16`)
+- assign role to ec2, and you could access from ssm session manager
+- cross env access from ec2, refer the image above:
+```sh
+curl https://internal.api0724.aws.panlm.xyz/httpbin
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
