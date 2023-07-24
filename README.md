@@ -1,7 +1,7 @@
 
-# 私有 API 在企业场景中的应用
+# 私有 API 在企业场景中的应用 - 沿用安全组件
 
-第一个场景我们描述使用 API Gateway 替换现有第三方 API Gateway 产品并与现有其他安全设备联动实现安全的应用发布。
+第一个场景我们描述使用 API Gateway 替换现有第三方商用 API Gateway 产品并与现有其他安全设备联动实现安全的应用发布。
 
 aws blog version (20230508)
 - https://aws.amazon.com/cn/blogs/china/private-api-gateway-in-enterprise-scenarios/
@@ -18,7 +18,7 @@ appendix
 
 第二个场景我们使用 API Gateway 替换已有的内网 Nginx 实现跨环境访问
 
-github version (20230723)
+github version (20230724)
 - [Using Private API to control cross environment traffic ](TC-private-api-cross-environment-traffic.md)
 
 

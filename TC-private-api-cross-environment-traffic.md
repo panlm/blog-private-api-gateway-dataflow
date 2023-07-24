@@ -17,9 +17,11 @@ title: This is a github note
 
 - [architecture summary](#architecture-summary)
 - [setup your lab environment](#setup-your-lab-environment)
+	- [before lab](#before-lab)
 	- [prep vpc](#prep-vpc)
-	- [prep cross env nlb in c9 vpc](#prep-cross-env-nlb-in-c9-vpc)
+	- [prep cross env NLB in c9 VPC](#prep-cross-env-nlb-in-c9-vpc)
 	- [prep api](#prep-api)
+	- [cross env access](#cross-env-access)
 
 
 ## architecture summary
@@ -30,8 +32,7 @@ title: This is a github note
 
 ### before lab
 
-please complete lab and then go to next step
-https://github.com/panlm/blog-private-api-gateway-dataflow/blob/main/TC-private-apigw-dataflow.md
+please complete lab and then go to next step ([TC-private-apigw-dataflow](TC-private-apigw-dataflow.md))
 
 ### prep vpc
 
@@ -314,7 +315,7 @@ aws route53 list-resource-record-sets --hosted-zone-id ${ZONE_ID} --query "Resou
 - create custom domain name in api gateway, and point to existed api's stage v1
 ![[TC-private-api-cross-environment-traffic-png-1.png]]
 
-## cross env access
+### cross env access
 - create ec2 instance in new vpc (`10.129.0.0/16`)
 - assign role to ec2, and you could access from ssm session manager
 - cross env access from ec2, refer the image above:
