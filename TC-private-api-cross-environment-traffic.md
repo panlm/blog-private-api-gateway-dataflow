@@ -15,26 +15,58 @@ title: This is a github note
 
 # TC-private-api-cross-environment-traffic
 
-- [architecture summary](#architecture-summary)
-- [setup your lab environment](#setup-your-lab-environment)
-	- [before lab](#before-lab)
-	- [prep vpc](#prep-vpc)
-	- [prep cross env NLB in c9 VPC](#prep-cross-env-nlb-in-c9-vpc)
-	- [prep api](#prep-api)
-	- [cross env access](#cross-env-access)
+- [架构描述](#%E6%9E%B6%E6%9E%84%E6%8F%8F%E8%BF%B0)
+- [搭建实验环境](#%E6%90%AD%E5%BB%BA%E5%AE%9E%E9%AA%8C%E7%8E%AF%E5%A2%83)
+	- [开始之前](#%E5%BC%80%E5%A7%8B%E4%B9%8B%E5%89%8D)
+	- [准备 VPC 互通](#%E5%87%86%E5%A4%87-vpc-%E4%BA%92%E9%80%9A)
+	- [在 Cloud9 VPC 中创建跨环境 NLB](#%E5%9C%A8-cloud9-vpc-%E4%B8%AD%E5%88%9B%E5%BB%BA%E8%B7%A8%E7%8E%AF%E5%A2%83-nlb)
+	- [配置内网域名](#%E9%85%8D%E7%BD%AE%E5%86%85%E7%BD%91%E5%9F%9F%E5%90%8D)
+	- [配置自定义域名隐射](#%E9%85%8D%E7%BD%AE%E8%87%AA%E5%AE%9A%E4%B9%89%E5%9F%9F%E5%90%8D%E9%9A%90%E5%B0%84)
+	- [跨环境访问](#%E8%B7%A8%E7%8E%AF%E5%A2%83%E8%AE%BF%E9%97%AE)
+- [reference](#reference)
 
 
-## architecture summary
+## 架构描述
+
+基于前一篇 [blog](TC-private-apigw-dataflow.md) 中描述的架构，使用 API gateway 替换原有架构中商业化 API gateway 产品后，就不需要不同环境 VPC 之间通过 TGW 实现互联。请求将从源（ingress）VPC 的 API gateway endpoint 进入 AWS 托管服务的骨干网络，达到 API gateway，再通过 VPC link 直接注入到客户目标（app）VPC 中。
+
+本篇中，要实现跨环境访问有两种途径：
+- 使用源 VPC 中的 API Gateway Endpoint 作为入口
+- 使用 SHARED VPC 中的 API Gateway Endpoint 作为入口
+
+综合客户安全规范以及统一配置和维护，建议使用第二种入口方式。并在该账号下统一配置 Route53 服务作为内网域名解析。
 
 ![apigw2-apigw.drawio.png](apigw2-apigw.drawio.png)
 
-## setup your lab environment
+## 搭建实验环境
 
-### before lab
+### 开始之前
 
-please complete lab and then go to next step ([TC-private-apigw-dataflow](TC-private-apigw-dataflow.md))
+在开始本篇实验之前，需要完成前一篇 [blog](TC-private-apigw-dataflow.md)，创建 Ingress VPC 和 APP VPC （为了便于区分，前一篇 blog 中 APP VPC 在本篇中描述为 APP-1 VPC）。本篇实验完成后将包含下列资源：
 
-### prep vpc
+- Ingress VPC - 使用所在区域中的默认 VPC
+	- Cloud9 - 交互实验环境
+	- Elastic Load Balancer - External ALB 用于接收外部请求
+	- VPC Endpoint -  用于私有 API 
+	- （可选）WAF - 创建 EC2，使用 Nginx 模拟 WAF，参考 [blog](fake-waf-on-ec2-forwarding-https.md) 
+	- （新建）CrossEnv NLB - 专用于跨环境访问
+- APP-1 VPC - 创建 EKS 集群时自动创建
+	- EKS Cluster - 后端应用运行
+	- Elastic Load Balancer - Internal ALB 用于应用 Ingress 
+	- Elastic Load Balancer - Internal NLB 用于 VPC Link
+- （新建）APP-2 VPC 
+	- （新建）EC2 - 用于跨环境测试， 使用内部域名访问 Private API
+- （新建）Transit Gateway - 互联上述 3 个 VPC ，并实现：
+	- （新建）路由可达 - Ingress VPC <---> APP-1 VPC 
+	- （新建）路由可达 - Ingress VPC <---> APP-2 VPC 
+	- （新建）路由不可达 - APP-1 VPC <-x-> APP-2 VPC 
+- 其他资源
+	- Private API - 请求将转发到下游 APP VPC 中的应用
+	- Route53 Hosted Zone - 实验环境的 DNS
+	- Amazon Certificate Manager - 实验环境所需证书 
+	- CloudWatch Logs - 用于收集 API Gateway 的 Access Log
+
+### 准备 VPC 互通
 
 - env in cloud9
 ```sh
@@ -207,7 +239,8 @@ done
 done
 ```
 
-### prep cross env NLB in c9 VPC
+### 在 Cloud9 VPC 中创建跨环境 NLB
+
 ```sh
 UNIQ_STR=$RANDOM
 PORT443=443
@@ -276,7 +309,8 @@ aws elbv2 register-targets \
 --targets ${targets}
 ```
 
-### prep api
+### 配置内网域名
+
 - using internal domain name CNAME to cross env NLB
 ```sh
 INTERNAL_HOSTNAME="internal.${DOMAIN_NAME}"
@@ -312,10 +346,13 @@ aws route53 change-resource-record-sets --hosted-zone-id ${ZONE_ID} --change-bat
 aws route53 list-resource-record-sets --hosted-zone-id ${ZONE_ID} --query "ResourceRecordSets[?Name == '${INTERNAL_HOSTNAME}.']"
 ```
 
+### 配置自定义域名映射
+
 - create custom domain name in api gateway, and point to existed api's stage v1
 ![[TC-private-api-cross-environment-traffic-png-1.png]]
 
-### cross env access
+### 跨环境访问
+
 - create ec2 instance in new vpc (`10.129.0.0/16`)
 - assign role to ec2, and you could access from ssm session manager
 - cross env access from ec2, refer the image above:
@@ -323,20 +360,9 @@ aws route53 list-resource-record-sets --hosted-zone-id ${ZONE_ID} --query "Resou
 curl https://internal.api0724.aws.panlm.xyz/httpbin
 ```
 
+## reference
 
-
-
-
-
-
-
-
-
-
-
-
-
-
+https://github.com/aws-samples/serverless-samples/tree/main/apigw-private-custom-domain-name
 
 
 

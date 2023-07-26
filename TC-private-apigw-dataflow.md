@@ -86,11 +86,12 @@ Amazon API Gateway 可以直接暴露到公网访问，无需前置任何负载�
 	- Cloud9 - 交互实验环境
 	- Elastic Load Balancer - External ALB 用于接收外部请求
 	- VPC Endpoint -  用于私有 API 
-- App VPC - 创建 EKS 集群时自动创建
+- APP VPC - 创建 EKS 集群时自动创建
 	- EKS Cluster - 后端应用运行
 	- Elastic Load Balancer - Internal ALB 用于应用 Ingress 
 	- Elastic Load Balancer - Internal NLB 用于 VPC Link
 - 其他资源
+	- Private API - 请求将转发到下游 APP VPC 中的应用
 	- Route53 Hosted Zone - 实验环境的 DNS
 	- Amazon Certificate Manager - 实验环境所需证书 
 	- CloudWatch Logs - 用于收集 API Gateway 的 Access Log

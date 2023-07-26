@@ -84,11 +84,12 @@ The latest version of the code covered in this article can be obtained from [Git
 	- Cloud9 - Interactive experimental environment
 	- Elastic Load Balancer - External ALB for receiving external requests
 	- VPC Endpoint - for private APIs
-- App VPC - created automatically when the EKS cluster is created
+- APP VPC - created automatically when the EKS cluster is created
 	- EKS Cluster - Backend application runs on it
 	- Elastic Load Balancer - Internal ALB for Ingress
 	- Elastic Load Balancer - Internal NLB for VPC Link
 - Additional Resources
+	- Private API - Forward request to downstream application in APP VPC
 	- Route53 Hosted Zone - DNS
 	- Amazon Certificate Manager - Certificates required in this article
 	- CloudWatch Logs - Used to collect API Gateway Access Logs
