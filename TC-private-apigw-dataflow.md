@@ -197,11 +197,7 @@ fi
 # install kubectl with +/- 1 cluster version 1.23.15 / 1.22.17 / 1.24.15 / 1.25.11
 # refer: https://kubernetes.io/releases/
 # sudo curl --location -o /usr/local/bin/kubectl "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-sudo curl --silent --location -o /usr/local/bin/kubectl "https://storage.googleapis.com/kubernetes-release/release/v1.25.11/bin/linux/amd64/kubectl"
-
-# 1.22.x version of kubectl
-# sudo curl --silent --location -o /usr/local/bin/kubectl "https://storage.googleapis.com/kubernetes-release/release/v1.22.11/bin/linux/amd64/kubectl"
-
+sudo curl --silent --location -o /usr/local/bin/kubectl "https://storage.googleapis.com/kubernetes-release/release/v1.25.12/bin/linux/amd64/kubectl"
 sudo chmod +x /usr/local/bin/kubectl
 
 kubectl completion bash >>  ~/.bash_completion
