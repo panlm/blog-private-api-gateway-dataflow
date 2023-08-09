@@ -1452,7 +1452,7 @@ echo "curl https://${POC_HOSTNAME}/${URI_PREFIX}/httpbin/anything"
 
 **查看下游应用可获取到的标头**
 - 上图中可以看到，下游应用返回的 `headers` 中包含了我们在 API 中自定义的标头 `xff`，用来获取请求中的 `X-Forwarded-For` 标头。同时可以将这个标头保存到 Access Log 中（如下图），用于安全审计目的；
-- 由于我们使用了私有 API，因此API Gateway 自带的 `$context.identity.sourceIp` 始终为外部应用负载均衡的内网地址(或者 WAF 地址，即进入 endpoint 前最后一个地址)。通过自定义标头 `xff` 获取更详细的信息；
+- 由于我们使用了私有 API，因此 API Gateway 自带的 `$context.identity.sourceIp` 始终为外部应用负载均衡的内网地址（或者 WAF 地址，即进入 Endpoint 前最后一个地址）。通过自定义标头 `xff` 获取更详细的信息；
 - 上图 `origin` 为 EKS 的 VPC 中，网络负载均衡（NLB）的内网地址；
 
 ![apigw-dataflow-png-5.png](apigw-dataflow-png-5.png)

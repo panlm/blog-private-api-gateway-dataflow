@@ -23,6 +23,7 @@ title: This is a github note
 	- [配置内网域名](#%E9%85%8D%E7%BD%AE%E5%86%85%E7%BD%91%E5%9F%9F%E5%90%8D)
 	- [配置自定义域名映射](#%E9%85%8D%E7%BD%AE%E8%87%AA%E5%AE%9A%E4%B9%89%E5%9F%9F%E5%90%8D%E6%98%A0%E5%B0%84)
 	- [跨环境访问](#%E8%B7%A8%E7%8E%AF%E5%A2%83%E8%AE%BF%E9%97%AE)
+	- [使用包含通配符的域名访问](#%E4%BD%BF%E7%94%A8%E5%8C%85%E5%90%AB%E9%80%9A%E9%85%8D%E7%AC%A6%E7%9A%84%E5%9F%9F%E5%90%8D%E8%AE%BF%E9%97%AE)
 - [结论](#%E7%BB%93%E8%AE%BA)
 - [参考资料](#%E5%8F%82%E8%80%83%E8%B5%84%E6%96%99)
 
@@ -257,7 +258,7 @@ UNIQ_STR=$RANDOM
 PORT443=443
 TMP=$(mktemp)
 echo ${AWS_DEFAULT_REGION}
-echo ${DOMAIN_NAME} # like "api0413.aws.panlm.xyz"
+echo ${DOMAIN_NAME} # like "api0809.aws.panlm.xyz"
 
 CERTIFICATE_ARN=$(aws acm list-certificates --query "CertificateSummaryList[?DomainName=='*.${DOMAIN_NAME}'].CertificateArn" --output text)
 echo ${CERTIFICATE_ARN}
@@ -367,11 +368,68 @@ aws route53 list-resource-record-sets --hosted-zone-id ${ZONE_ID} --query "Resou
 ### 跨环境访问
 
 - 在 APP-2 VPC 中 (默认为 `10.129.0.0/16`, which created by Cloudformation)，创建 EC2 实例
-- 分配角色给 EC2，确保可以使用 SSM Session Manager 访问 (refer [link]())
-- 从 EC2 发起请求，访问内网的域名:
+- 分配角色给该 EC2，重启实例，确保可以使用 SSM Session Manager 访问 (refer [doc](https://docs.aws.amazon.com/en_us/console/systems-manager/qs-host-management))
+- 从该 EC2 发起请求，访问内网的域名:
 ```sh
 echo curl https://${INTERNAL_HOSTNAME}/httpbin
 ```
+
+![TC-private-api-cross-environment-traffic-png-2.png](TC-private-api-cross-environment-traffic-png-2.png)
+
+**查看 ICMP 请求的数据流**
+- 从 APP-2 VPC 到 APP-1 VPC 的 ICMP 数据流不可访问，路由不可达
+
+**查看 curl 请求的数据流**
+- 从上图 `origin` 字段可以看到完整的请求数据流
+	- 第一个地址为 Ingress VPC 中， 跨环境负载均衡（CrossENV NLB）的内网地址；
+	- 第二个地址为 APP-1 VPC 中，网络负载均衡（NLB）的内网地址；
+
+### 使用包含通配符的域名访问
+
+接下来我们将扩展下域名相关内容。我们尝试使用通配符将未定义的域名全部转发到 API Gateway，通过在 Custom Domain Name 中的 mapping 进行映射，基于请求的路径将不同的请求转发到不同的私有 API 上。
+
+- 我们先创建一个 Sample 的 API，并确保 Endpoint 类型为 **私有**
+![TC-private-api-cross-environment-traffic-png-3.png](TC-private-api-cross-environment-traffic-png-3.png)
+![TC-private-api-cross-environment-traffic-png-4.png](TC-private-api-cross-environment-traffic-png-4.png)
+
+- 私有 API 在 Deploy 之前需要配置 Resource Policy，直接使用下面代码。注意修改 vpce-id 为你环境中 Ingress VPC 中的 API Gateway Endpoint，为了方便，参考已有的 API 的 Resource Policy 中的 vpce-id
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Deny",
+      "Principal": "*",
+      "Action": "execute-api:Invoke",
+      "Resource": "execute-api:/*/*/*",
+      "Condition": {
+        "StringNotEquals": {
+          "aws:sourceVpce": ["vpce-093cxxxx0ee8"]
+        }
+      }
+    },
+    {
+      "Effect": "Allow",
+      "Principal": "*",
+      "Action": "execute-api:Invoke",
+      "Resource": "execute-api:/*/*/*"
+    }
+  ]
+}
+```
+
+- Deploy API 时，新 Stage 名称为 v1
+- 创建一个新的 Customer Domain Name 为 `*.api0809.aws.panlm.xyz`
+	- 注意我们使用不同 Path 对应不同的 API Stage
+![TC-private-api-cross-environment-traffic-png-5.png](TC-private-api-cross-environment-traffic-png-5.png)
+
+-  然后我们需要添加一条新记录到 Route53 中，确保所有子域名请求都转发到 CrossENV NLB 上 （wildcard DNS record）
+![TC-private-api-cross-environment-traffic-png-6.png](TC-private-api-cross-environment-traffic-png-6.png)
+
+- 接下来我们从 EC2 上进行验证
+	- 请求访问随机 子域名 加 my-api 前缀
+	- 请求访问随机 子域名 加 pet-api 前缀
+![TC-private-api-cross-environment-traffic-png-7.png](TC-private-api-cross-environment-traffic-png-7.png)
 
 
 ## 结论
