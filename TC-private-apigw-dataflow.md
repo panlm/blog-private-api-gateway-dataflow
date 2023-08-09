@@ -766,7 +766,7 @@ aws route53 list-resource-record-sets \
 
 ```
 
-- 等待状态转变成 SUCCESS 
+- 等待状态转变成 SUCCESS。如果一直处于 PENDING 状态，请检查 DNS 解析是否成功
 ```sh
 # wait ValidationStatus to SUCCESS
 aws acm describe-certificate \
@@ -778,15 +778,13 @@ aws acm describe-certificate \
 #### 验证环境就绪
 验证应用发布可用以及证书有效 ([链接](http://aws-labs.panlm.xyz/100-eks-infra/130-eks-network/externaldns-for-route53.html#verify))，如果验证成功，可以从 EKS 集群中删除名为 `verify`  的命名空间
 
-- create namespace in eks
+- 创建命名空间 
 ```sh
 NS=verify
 kubectl create ns ${NS}
 ```
 
-***service sample***
-
-- create nlb (no more clb, 20230423) with service definition
+- 通过服务定义创建 NLB
 ```sh
 envsubst >verify-nginx.yaml <<-EOF
 apiVersion: v1
@@ -830,7 +828,7 @@ kubectl create --filename verify-nginx.yaml -n ${NS:-default}
 
 ```
 
-- wait NLB available and execute
+- 等待 NLB 状态可用后执行下面代码块
 ```sh
 aws route53 list-resource-record-sets --output json --hosted-zone-id $ZONE_ID \
   --query "ResourceRecordSets[?Name == 'nginx.${DOMAIN_NAME}.']|[?Type == 'A']"
@@ -844,9 +842,7 @@ curl http://nginx.${DOMAIN_NAME}
 
 ```
 
-***ingress sample***
-
-- ensure certificate is existed and create alb 
+- 确保证书存在，然后创建 ALB 
 ```sh
 echo ${CERTIFICATE_ARN}
 
@@ -882,7 +878,7 @@ kubectl create --filename verify-nginx-ingress.yaml -n ${NS:-default}
 
 ```
 
-- wait alb available and execute
+- 等待 ALB 状态可用后执行下面代码块
 ```sh
 aws route53 list-resource-record-sets --output json --hosted-zone-id $ZONE_ID \
   --query "ResourceRecordSets[?Name == 'server.${DOMAIN_NAME}.']"
@@ -1352,7 +1348,7 @@ aws apigateway create-base-path-mapping \
 **Custom Access Logging**
 API Gateway 中，可以配置两种不同类型日志，API 日志和 Access Log 日志。
 
-- 执行下面代码块创建专用角色，获取 Role ARN，然后将角色添加到 `Settings` （参考[文档](https://docs.aws.amazon.com/apigateway/latest/developerguide/set-up-logging.html#set-up-access-logging-using-console)）
+- 执行下面代码块创建专用角色，获取 Role ARN，然后将角色添加到 [API Gateway](https://us-east-2.console.aws.amazon.com/apigateway) 的 `Settings` （参考[文档](https://docs.aws.amazon.com/apigateway/latest/developerguide/set-up-logging.html#set-up-access-logging-using-console)）
 ```sh
 ROLE_NAME=apigatewayrole-$(date +%Y%m%d-%H%M)
 echo '{

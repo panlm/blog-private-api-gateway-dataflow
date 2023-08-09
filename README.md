@@ -6,7 +6,7 @@
 aws blog version (20230508)
 - https://aws.amazon.com/cn/blogs/china/private-api-gateway-in-enterprise-scenarios/
 
-github version (20230717)
+github version (20230809)
 - [Private API Scenarios in Enterprise Customers（中文版）](TC-private-apigw-dataflow.md)
 - [Private API Scenarios in Enterprise Customers （English）](TC-private-apigw-dataflow-en.md)
 
@@ -18,7 +18,7 @@ appendix
 
 第二个场景我们使用 API Gateway 替换已有的内网 Nginx 实现跨环境访问
 
-github version (20230724)
+github version (20230809)
 - [Using Private API to control cross environment traffic ](TC-private-api-cross-environment-traffic.md)
 
 

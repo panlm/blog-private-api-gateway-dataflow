@@ -763,7 +763,7 @@ aws route53 list-resource-record-sets \
 
 ```
 
-- wait ValidationStatus to SUCCESS 
+- wait ValidationStatus to SUCCESS. If it is in PENDING for a long time, please check DNS resolving works successfully
 ```sh
 # wait ValidationStatus to SUCCESS
 aws acm describe-certificate \
@@ -776,15 +776,13 @@ aws acm describe-certificate \
 
 Verify that the application exposed successfully and the certificate is valid ([link](http://aws-labs.panlm.xyz/100-eks-infra/130-eks-network/externaldns-for-route53.html#verify)). After that, you could delete the namespace (`verify`)  in the EKS cluster
 
-- create namespace in eks
+- create namespace in EKS
 ```sh
 NS=verify
 kubectl create ns ${NS}
 ```
 
-***service sample***
-
-- create nlb (no more clb, 20230423) with service definition
+- create NLB with service definition
 ```sh
 envsubst >verify-nginx.yaml <<-EOF
 apiVersion: v1
@@ -841,8 +839,6 @@ dig +short nginx.${DOMAIN_NAME}. A
 curl http://nginx.${DOMAIN_NAME}
 
 ```
-
-***ingress sample***
 
 - ensure certificate is existed and create alb 
 ```sh
