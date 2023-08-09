@@ -362,7 +362,7 @@ aws route53 list-resource-record-sets --hosted-zone-id ${ZONE_ID} --query "Resou
 
 - 在 API Gateway 中创建自定义域名，并且指向现有 API 的 stage v1
 
-![[TC-private-api-cross-environment-traffic-png-1.png]]
+![TC-private-api-cross-environment-traffic-png-1.png](TC-private-api-cross-environment-traffic-png-1.png)
 
 ### 跨环境访问
 
