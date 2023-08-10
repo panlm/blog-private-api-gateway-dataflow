@@ -13,7 +13,7 @@ title: This is a github note
 
 ```
 
-# TC-private-api-cross-environment-traffic
+# 私有 API 在企业场景中的应用——跨环境访问
 
 - [架构描述](#%E6%9E%B6%E6%9E%84%E6%8F%8F%E8%BF%B0)
 - [搭建实验环境](#%E6%90%AD%E5%BB%BA%E5%AE%9E%E9%AA%8C%E7%8E%AF%E5%A2%83)
@@ -30,19 +30,26 @@ title: This is a github note
 
 ## 架构描述
 
-基于此前一篇[博文](TC-private-apigw-dataflow.md)中描述的架构，使用 API Gateway 替换原有架构中商业化 API Gateway 产品后，就不需要不同环境 VPC 之间通过 Transit Gateway 实现互联。请求将从源 VPC (Ingress VPC) 的 API Gateway Endpoint 进入 AWS 托管服务的骨干网络，达到 API Gateway，再通过 VPC Link 直接注入到目标 VPC (APP VPC) 中。保证流量始终保持在 VPC 内部，或者 AWS 的可信网络内部，以满足企业安全合规要求等。
+在企业用户场景中普遍采用多账号的设计（详见[白皮书](https://docs.aws.amazon.com/whitepapers/latest/organizing-your-aws-environment/organizing-your-aws-environment.html)）。最基本的是区分生产账号和非生产账号，在非生产账号中一般使用 VPC 分割不同的环境，例如，开发、测试、预生产等环境使用各自单独的 VPC 进行隔离。另外常见使用共享服务账号，一般是运行一些特定的应用，例如 CICD 应用需要和各个环境进行访问；或者过滤 Ingress 流量的 WAF 组件等。然后使用 AWS 网络组件，例如 Transit Gateway，将共享服务账号下的 VPC 与其他环境中的 VPC 互通。 这样既保证了各个环境的相对独立性，又便于共享服务的访问。
 
-在企业实际使用中会延伸出更多复杂场景，不仅有多账号，并且隶属于不同应用团队。从当前 VPC 中的 API Gateway Endpoint 可以访问私有的 API （如果 API 端的资源策略已允许），但是配置分散且无法统一管理，增加了额外的管理负担。因此从安全角度出发，为了方便统一控制、集中审计和一致的合规性保证，建议使用 Ingress VPC 中的 API Gateway Endpoint 作为统一入口。并且在该账号下统一配置 Route53 服务作为内网域名解析。
+基于此前一篇[博文](TC-private-apigw-dataflow.md)中描述，越来越多的客户在其应用云原生改造中大量使用 Amazon API Gateway 托管服务替换现有应用架构中的第三方 API 网关产品。并且可以在 VPC 中直接使用 API Gateway Endpoint 将流量发送到 API Gateway。对于从外部进入的请求（下图中按照 1-2-3-4-5 的数据流），可以直接从源 VPC (Ingress VPC) 的 API Gateway Endpoint 进入 AWS 托管服务的骨干网络，达到 API Gateway，再通过 VPC Link 直接注入到目标 VPC (APP VPC) 中。
 
-在企业内部使用私有 API 时，尤其是需要使用内部域名访问时，不能直接将请求转发到 API Gateway Endpoint 上，因为会遇到证书验证的问题。需要在 API Gateway Endpoint 之前添加 NLB 或者 ALB 作为内部域名证书卸载。如下图所示：
+在企业实际使用中会延伸出更多复杂场景，例如，存在跨环境的相互访问时，这样的数据流会有潜在的问题，尤其是在非生产账号下，分散在各自 VPC 中的 Endpoint 无法统一管理，增加了额外的运维负担。从安全角度出发，为了便于统一管控、集中审计和一致的合规性保证，建议在非生产账号下使用 Ingress VPC 中的 API Gateway Endpoint 作为统一入口。并且在该账号下统一配置 Route53 服务作为内网域名解析。
+
+另外，在企业内部使用私有 API 同时绑定内部域名访问时，请求不能直接转发到 API Gateway Endpoint 上，因为会遇到证书验证的问题。需要在 API Gateway Endpoint 之前添加网络负载均衡 (NLB) 或者应用负载均衡 (ALB) 作为内部域名证书卸载使用。
+
+为了简化本篇实验，我们将上述场景中共享服务账号和非生产账号合并为下图中的单一账号。以图中 TGW 为中线，左侧 VPC 更偏向共享服务账号所承担的角色功能；右侧多个 VPC 更偏向非生产账号所承担的角色功能，同时代表各自不同环境，例如开发、测试、预生产等。 TGW 组件上的绿色线条表示路由可达，红色线条表示路由不可达，意味着共享服务 VPC 到各个环境都是路由可达，各个环境之间是路由不可达。
 
 ![apigw2-apigw.drawio.png](apigw2-apigw.drawio.png)
 
-本实验完成后，我们将使用内部域名实现跨环境数据流（上图紫红色线条）
-- A: APP-2 VPC 中应用需要跨环境访问 APP-1 VPC 中的应用。请求将被解析到 Ingress VPC 中的 CrossENV NLB/ALB 上
-- B: CrossENV NLB/ALB 上将承担 TLS 卸载，并且将请求通过 Endpoint 转发到 API Gateway
-- C: 在使用 Custom Domain Name 解析了域名和私有 API 的 Stage 之间的映射关系后，请求将被转发到正确的 API 上
-- D: 然后通过 VPC Link 转发到目标 VPC 中的应用上
+本篇实验完成后，我们将使用内部域名实现跨环境数据流访问（上图紫红色线条）。
+
+- A: APP-2 VPC 中的应用需要跨环境访问 APP-1 VPC 中的应用。内部域名将被解析到 Ingress VPC 中的 CrossENV NLB/ALB 上；
+- B: CrossENV NLB/ALB 上将承担内部域名的证书的 TLS 卸载，并且将请求通过 Endpoint 转发到 API Gateway；
+- C: 使用 Custom Domain Name 映射内部域名和私有 API 的 Stage 之间的关系后，请求将被转发到正确的私有 API 上；
+- D: 然后通过 VPC Link 转发到目标 VPC 中的应用上；
+
+在本篇实验的最后部分，我们将使用包含通配符的域名访问私有 API，并且给出基于路径转发到不同 API 的示例。
 
 ## 搭建实验环境
 
@@ -441,7 +448,7 @@ echo curl https://${INTERNAL_HOSTNAME}/httpbin
 
 ## 结论
 
-基于企业客户的安全指南，不同环境之间是应该相互独立，不允许互访，如果有需要访问的，应该显式的（explicited）使用 Ingress VPC 作为中转，方便安全团队监管和确保合规性。本篇中实现了使用私有 API 时，如何符合这一安全要求。确保使用 API Gateway 替换原有架构中商业化 API Gateway 产品后，整个架构的可延续性和安全合规性。
+基于企业客户的安全指南，不同环境之间是应该相互独立，不允许互访，如果有需要访问的，应该显式的（explicited）使用 Ingress VPC 作为中转，方便安全团队监管和确保合规性。本篇中实现了使用私有 API 同时绑定内部域名访问时，如何符合这一安全要求。确保使用 API Gateway 替换原有架构中第三方 API 网关产品后，整个架构的可延续性和安全合规性。
 
 
 ## 参考资料
