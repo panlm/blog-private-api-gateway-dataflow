@@ -103,7 +103,7 @@ Amazon API Gateway 可以直接暴露到公网访问，无需前置任何负载�
 #### 准备 AWS Cloud9 实验环境 
 ([链接](http://aws-labs.panlm.xyz/20-cloud9/setup-cloud9-for-eks.html))
 
--  点击[这里](https://console.aws.amazon.com/cloudshell) 运行 cloudshell，执行代码块创建 cloud9 测试环境 
+-  点击[这里](https://us-east-2.console.aws.amazon.com/cloudshell) 运行 cloudshell，执行代码块创建 cloud9 测试环境 
 ```sh
 # name=<give your cloud9 a name>
 datestring=$(date +%Y%m%d-%H%M)

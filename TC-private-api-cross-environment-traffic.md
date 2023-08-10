@@ -18,7 +18,7 @@ title: This is a github note
 - [架构描述](#%E6%9E%B6%E6%9E%84%E6%8F%8F%E8%BF%B0)
 - [搭建实验环境](#%E6%90%AD%E5%BB%BA%E5%AE%9E%E9%AA%8C%E7%8E%AF%E5%A2%83)
 	- [开始之前](#%E5%BC%80%E5%A7%8B%E4%B9%8B%E5%89%8D)
-	- [准备 VPC 互通](#%E5%87%86%E5%A4%87-vpc-%E4%BA%92%E9%80%9A)
+	- [配置 VPC 互通](#%E9%85%8D%E7%BD%AE-vpc-%E4%BA%92%E9%80%9A)
 	- [在 Cloud9 VPC 中创建跨环境负载均衡 CrossENV NLB](#%E5%9C%A8-cloud9-vpc-%E4%B8%AD%E5%88%9B%E5%BB%BA%E8%B7%A8%E7%8E%AF%E5%A2%83%E8%B4%9F%E8%BD%BD%E5%9D%87%E8%A1%A1-crossenv-nlb)
 	- [配置内网域名](#%E9%85%8D%E7%BD%AE%E5%86%85%E7%BD%91%E5%9F%9F%E5%90%8D)
 	- [配置自定义域名映射](#%E9%85%8D%E7%BD%AE%E8%87%AA%E5%AE%9A%E4%B9%89%E5%9F%9F%E5%90%8D%E6%98%A0%E5%B0%84)
@@ -30,30 +30,32 @@ title: This is a github note
 
 ## 架构描述
 
-基于前一篇 [Blog](TC-private-apigw-dataflow.md) 中描述的架构，使用 API Gateway 替换原有架构中商业化 API Gateway 产品后，就不需要不同环境 VPC 之间通过 Transit Gateway 实现互联。请求将从源 VPC (Ingress VPC) 的 API Gateway Endpoint 进入 AWS 托管服务的骨干网络，达到 API Gateway，再通过 VPC Link 直接注入到目标 VPC (APP VPC) 中。
+基于此前一篇[博文](TC-private-apigw-dataflow.md)中描述的架构，使用 API Gateway 替换原有架构中商业化 API Gateway 产品后，就不需要不同环境 VPC 之间通过 Transit Gateway 实现互联。请求将从源 VPC (Ingress VPC) 的 API Gateway Endpoint 进入 AWS 托管服务的骨干网络，达到 API Gateway，再通过 VPC Link 直接注入到目标 VPC (APP VPC) 中。保证流量始终保持在 VPC 内部，或者 AWS 的可信网络内部，以满足企业安全合规要求等。
 
-在企业场景中可能更为复杂，不仅有多账号，并且隶属于不同应用团队。从当前 VPC 中的 API Gateway Endpoint 可以访问私有的 API （如果 API 端的策略已允许），但是配置分散无法统一管理，增加了额外的管理负担。因此建议使用 Ingress VPC 中的 API Gateway Endpoint 作为统一入口。并且在该账号下统一配置 Route53 服务作为内网域名解析。从安全角度来说，也方便统一进行审计和一致的合规性保证。
+在企业实际使用中会延伸出更多复杂场景，不仅有多账号，并且隶属于不同应用团队。从当前 VPC 中的 API Gateway Endpoint 可以访问私有的 API （如果 API 端的资源策略已允许），但是配置分散且无法统一管理，增加了额外的管理负担。因此从安全角度出发，为了方便统一控制、集中审计和一致的合规性保证，建议使用 Ingress VPC 中的 API Gateway Endpoint 作为统一入口。并且在该账号下统一配置 Route53 服务作为内网域名解析。
+
+在企业内部使用私有 API 时，尤其是需要使用内部域名访问时，不能直接将请求转发到 API Gateway Endpoint 上，因为会遇到证书验证的问题。需要在 API Gateway Endpoint 之前添加 NLB 或者 ALB 作为内部域名证书卸载。如下图所示：
 
 ![apigw2-apigw.drawio.png](apigw2-apigw.drawio.png)
 
-本实验完成后，我们将实现跨环境数据流（上图紫红色线条）
+本实验完成后，我们将使用内部域名实现跨环境数据流（上图紫红色线条）
 - A: APP-2 VPC 中应用需要跨环境访问 APP-1 VPC 中的应用。请求将被解析到 Ingress VPC 中的 CrossENV NLB/ALB 上
 - B: CrossENV NLB/ALB 上将承担 TLS 卸载，并且将请求通过 Endpoint 转发到 API Gateway
 - C: 在使用 Custom Domain Name 解析了域名和私有 API 的 Stage 之间的映射关系后，请求将被转发到正确的 API 上
-- D: 然后通过 VPC Link 转发到目标 VPC 中的应用
+- D: 然后通过 VPC Link 转发到目标 VPC 中的应用上
 
 ## 搭建实验环境
 
 ### 开始之前
 
-在开始本篇实验之前，需要完成前一篇 [Blog](TC-private-apigw-dataflow.md)，创建 Ingress VPC 和 APP VPC （为了便于区分，前一篇 Blog 中 APP VPC 在本篇中描述为 APP-1 VPC）。本篇实验完成后将包含下列资源：
+在开始本篇实验之前，需要完成前一篇[博文](TC-private-apigw-dataflow.md)，创建 Ingress VPC 和 APP VPC （为了便于区分，前一篇 Blog 中 APP VPC 在本篇中描述为 APP-1 VPC）。本篇博文所涉及到的代码可以从 [Github](https://github.com/panlm/blog-private-api-gateway-dataflow) 获取到最新版本。本篇实验完成后将包含下列资源：
 
 - Ingress VPC - 使用所在区域中的默认 VPC
 	- Cloud9 - 交互实验环境
 	- Elastic Load Balancer - External ALB 用于接收外部请求
 	- VPC Endpoint -  用于私有 API 
 	- （可选）WAF - 创建 EC2，使用 Nginx 模拟 WAF，参考 [Blog](fake-waf-on-ec2-forwarding-https.md) 
-	- （新建）CrossEnv NLB - 专用于跨环境访问
+	- （新建）CrossENV NLB - 专用于跨环境访问
 - APP-1 VPC - 创建 EKS 集群时自动创建
 	- EKS Cluster - 后端应用运行
 	- Elastic Load Balancer - Internal ALB 用于应用 Ingress 
@@ -63,17 +65,17 @@ title: This is a github note
 - （新建）TGW (Transit Gateway) - 互联上述 3 个 VPC ，并实现：
 	- （新建）路由可达 - Ingress VPC <---> APP-1 VPC 
 	- （新建）路由可达 - Ingress VPC <---> APP-2 VPC 
-	- （新建）路由不可达 - APP-1 VPC <-x-> APP-2 VPC 
+	- （新建）路由不可达 - APP-1 VPC <-X-> APP-2 VPC 
 - 其他资源
 	- Private API - 请求将转发到下游 APP VPC 中的应用
 	- Route53 Hosted Zone - 实验环境的 DNS
 	- Amazon Certificate Manager - 实验环境所需证书 
 	- CloudWatch Logs - 用于收集 API Gateway 的 Access Log
 
-### 准备 VPC 互通
+### 配置 VPC 互通
 
 - 创建实验用的 Cloud9，参考[链接](TC-private-apigw-dataflow#%E5%87%86%E5%A4%87%20AWS%20Cloud9%20%E5%AE%9E%E9%AA%8C%E7%8E%AF%E5%A2%83.md) 
-- 在现有的 Cloud9 中开始配置 VPC 互通
+- 开始配置 VPC 互通
 ```sh
 CLUSTER_NAME=ekscluster1
 AWS_REGION=$(curl -s 169.254.169.254/latest/dynamic/instance-identity/document | jq -r '.region')
@@ -252,12 +254,14 @@ done
 
 ### 在 Cloud9 VPC 中创建跨环境负载均衡 CrossENV NLB
 
-- 确保域名和证书存在
+- 确保 Hosted Zone 和证书存在
 ```sh
 UNIQ_STR=$RANDOM
 PORT443=443
 TMP=$(mktemp)
 echo ${AWS_DEFAULT_REGION}
+
+# DOMAIN_NAME=$(aws route53 list-hosted-zones-by-name --dns-name panlm.xyz --query HostedZones[].Name --output text |sed 's/\.$//')
 echo ${DOMAIN_NAME} # like "api0809.aws.panlm.xyz"
 
 CERTIFICATE_ARN=$(aws acm list-certificates --query "CertificateSummaryList[?DomainName=='*.${DOMAIN_NAME}'].CertificateArn" --output text)
@@ -361,15 +365,18 @@ aws route53 list-resource-record-sets --hosted-zone-id ${ZONE_ID} --query "Resou
 
 ### 配置自定义域名映射
 
-- 在 API Gateway 中创建自定义域名，并且指向现有 API 的 stage v1
+- 在 API Gateway 中创建自定义域名 `internal` ，并且选择相应的 ACM 证书
+- 配置 API Mapping （如下图）指向现有 API 的 stage v1，Path 为空
 
 ![TC-private-api-cross-environment-traffic-png-1.png](TC-private-api-cross-environment-traffic-png-1.png)
 
 ### 跨环境访问
 
-- 在 APP-2 VPC 中 (默认为 `10.129.0.0/16`, which created by Cloudformation)，创建 EC2 实例
-- 分配角色给该 EC2，重启实例，确保可以使用 SSM Session Manager 访问 (refer [doc](https://docs.aws.amazon.com/en_us/console/systems-manager/qs-host-management))
-- 从该 EC2 发起请求，访问内网的域名:
+- 创建 EC2 实例
+	- 在 APP-2 VPC 中 Private Subnet 中（默认为 `10.129.0.0/16`，由 Cloudformation 创建）
+	- 不需要指定 Key （通过 SSM Session Manager 访问，相关Endpoint 由 Cloudformation 创建）
+- 创建角色分配给 EC2，包含策略 `AmazonSSMManagedInstanceCore`，重启实例，确保可以使用 SSM Session Manager 访问（参考[文档](https://docs.aws.amazon.com/en_us/console/systems-manager/qs-host-management)）
+- 从该 EC2 发起请求，访问内网的域名：
 ```sh
 echo curl https://${INTERNAL_HOSTNAME}/httpbin
 ```
@@ -377,12 +384,12 @@ echo curl https://${INTERNAL_HOSTNAME}/httpbin
 ![TC-private-api-cross-environment-traffic-png-2.png](TC-private-api-cross-environment-traffic-png-2.png)
 
 **查看 ICMP 请求的数据流**
-- 从 APP-2 VPC 到 APP-1 VPC 的 ICMP 数据流不可访问，路由不可达
+- 从 APP-2 VPC 到 APP-1 VPC 的 ICMP 数据流不可访问，路由不可达（提前已配置目标实例的安全组允许 ICMP 流量）
 
 **查看 curl 请求的数据流**
 - 从上图 `origin` 字段可以看到完整的请求数据流
 	- 第一个地址为 Ingress VPC 中， 跨环境负载均衡（CrossENV NLB）的内网地址；
-	- 第二个地址为 APP-1 VPC 中，网络负载均衡（NLB）的内网地址；
+	- 第二个地址为 APP-1 VPC 中，网络负载均衡（Internal NLB）的内网地址；
 
 ### 使用包含通配符的域名访问
 
