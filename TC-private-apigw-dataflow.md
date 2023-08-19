@@ -47,10 +47,9 @@ Amazon API Gateway 是亚马逊云科技的一项托管服务，可以帮助开�
 在企业用户场景中大量使用第三方安全设备，普遍采用集中式 Ingress 的 ELB Sandwich 架构（详见[博客](https://aws.amazon.com/blogs/networking-and-content-delivery/design-your-firewall-deployment-for-internet-ingress-traffic-flows/)）。我们以此为典型架构，详细分析该架构中使用 Amazon API Gateway 替换第三方 API 网关服务时的数据流。
 
 我们先来看下该架构中使用第三方 API 网关服务时的数据流（下图绿色数字标记）：
-- 1： 外部应用负载均衡（External ALB）， 基于最小暴露原则，将仅需要提供对外访问的 API 暴露到公网；
-- 2： 第三方安全设备，所有流量将经过企业内部专有的安全设备进行 7 层的流量过滤和防护 ；
-- 3： 经过过滤的流量将转发到第三方 API 网关服务上，然后完成鉴权和请求转发；
-- 4： 请求访问到内部应用负载均衡（Internal ALB），最终访问到应用服务；
+- 1： 应用请求将通过外部应用负载均衡（External ALB）， 直接转发到企业内部专有的第三方安全设备，所有流量将经过 7 层的流量过滤和防护 ；
+- 2： 经过过滤的流量将转发到第三方 API 网关服务上，然后完成鉴权和请求转发；
+- 3： 请求访问到内部应用负载均衡（Internal ALB），最终访问到应用服务；
 
 架构注释：
 - 使用独立的 Ingress VPC 可以更好的实现架构扩展性，可以有多个 App VPC 存在，相互独立的同时，附加到 TGW 实现统一的南北向流量管控；
@@ -65,7 +64,7 @@ Amazon API Gateway 可以直接暴露到公网访问，无需前置任何负载�
 - 2： 请求流量进入 VPC Endpoint 后，将由 API Gateway 进行处理，此时流量虽然已经离开用户的 VPC，但是依然保留在 AWS 可信网络内部；
 - 3： 所有请求在转发到下游应用之前需要验证鉴权有效，一般使用 Lambda Authorizer 实现。例如，验证请求中自带的 Access Token 有效；
 - 4： 验证鉴权有效之后，请求将通过 VPC Link 访问到客户 VPC 中的应用服务，使用 VPC Link 可以保证请求流量直接进入用户的 VPC 内部而不会传输到公网；
-- 5： 由于应用发布在内部应用负载均衡（Internal ALB）上，Rest API 类型的 VPC Link 支持通过网络负载均衡（NLB）将请求转发到内部应用负载均衡上，最终访问应用服务；
+- 5： 由于应用发布在内部应用负载均衡（Internal ALB）上，Rest API 类型的 VPC Link 支持通过内部网络负载均衡（Internal NLB）将请求转发到内部应用负载均衡上，最终访问应用服务；
 
 架构注释：
 - 从数据流中可以看出，原有跨 VPC 的数据会经过 Amazon Transit Gateway (TGW)，使用 API Gateway 之后数据将从 AWS 可信网络内部传输，不再需要原有 TGW 组件；
@@ -990,7 +989,7 @@ kubectl apply --filename httpbin.yaml -n httpbin
 - 6 - 创建定制域名，需要与测试域名 `poc.api0413.aws.panlm.xyz` 一致，且在 ACM 中有该域名的证书。创建 Mapping，将域名映射到特定 Stage 上，如果请求 URL 带有路径信息（ Path Pattern ），则需要填入对应路径信息；
 - 7 - 创建 Rest 类型 VPC Link，需要提前创建 NLB 以及 ALB 类型的 Target Group，并将下游应用的 ALB 注册到该 Target Group 上；
 - 8 - （可选）使用 Lambda 验证鉴权。一旦鉴权成功，便可从上下文中获取到必要的信息 ([链接](https://docs.aws.amazon.com/apigateway/latest/developerguide/api-gateway-mapping-template-reference.html#context-variable-reference:~:text=context.authorizer.property))。比如，使用 Lambda 鉴权请求中自带的 Access Token，成功之后可以从 Access Token 中获取到用户具体详情，作为 header 提供下游应用直接使用；
-- 9 - 请求发送到内部应用 ALB 时，ALB 使用的证书是自签名证书，且提前导入到 ACM 中（未包含完整证书链），这样的证书使用在 ALB 上是没问题的，但是作为 API Gateway 下游请求的话，则会遇到问题；
+- 9 - 请求发送到内部应用 ALB 时（确保只使用标准 TLD 域名，参考[链接](https://en.wikipedia.org/wiki/List_of_Internet_top-level_domains)），ALB 使用的证书是自签名证书，且提前导入到 ACM 中（未包含完整证书链），这样的证书使用在 ALB 上是没问题的，但是作为 API Gateway 下游请求的话，则会遇到问题；
 	- 首先，API Gateway 默认无法验证自签名证书，除非启用 `tlsConfig/insecureSkipVerification` ([链接](https://aws.amazon.com/premiumsupport/knowledge-center/api-gateway-ssl-certificate-errors/))，且启用后也仅验证包含完整证书链的自签名证书；
 	- 其次， 每个 API 的每个 Resource 的每个 Method 都需要单独通过命令行启用，通过这个脚本简化工作 ([链接](http://aws-labs.panlm.xyz/900-others/990-command-line/script-api-resource-method.html))。另外，可以通过导出带 `API Gateway extensions` 的格式修改，并重新导入覆盖；
 - 10 - 导入其他需要测试的 API ，提前提升上限 `Resources per API` （默认 300，详见[链接](https://docs.aws.amazon.com/apigateway/latest/developerguide/limits.html)）；

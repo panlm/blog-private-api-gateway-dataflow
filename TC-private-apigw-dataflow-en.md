@@ -46,10 +46,9 @@ Amazon API Gateway is a managed service that helps developers easily create, pub
 Third-party security devices are adopted widely in enterprise customers, and the centralized Ingress ELB Sandwich architecture is adopted commonly as well (see [blog](https://aws.amazon.com/blogs/networking-and-content-delivery/design-your-firewall-deployment-for-internet-ingress-traffic-flows/)). In this typical architecture, we deep dive the data flow when using Amazon API Gateway to replace the third-party API gateway products.
 
 Let's first take a look at the data flow when using a third-party API gateway product in this architecture (green numbers in the image below):
-- 1: External Application Load Balancer (External ALB), based on the principle of minimum exposure, exposes the APIs that required to be access by external from internet;
-- 2: Third-party security equipment, all traffic will go through it for traffic filtering and protection within the enterprise;
-- 3: The filtered traffic will be forwarded to a third-party API gateway product, and then complete authentication and authorization, then requests will be keep forwarding;
-- 4: Request access to Internal Application Load Balancer (Internal ALB) and access to application finally;
+- 1: All requests will be filtered and protected by the internal third-party layer 7 security device through the external application load balancing (External ALB);
+- 2: The filtered traffic will be forwarded to a third-party API gateway product, and then complete authentication and authorization, then requests will be keep forwarding;
+- 3: Request access to Internal Application Load Balancer (Internal ALB) and access to application finally;
 
 Architectural notes:
 - Using an independent Ingress VPC can achieve architectural scalability better. Multiple App VPCs can exist at the same time, and be independent each other, they could be attached to TGW to achieve north-south traffic control;
@@ -64,7 +63,7 @@ Let's take a look at the data flow when using Amazon API Gateway (marked with re
 - 2: After the traffic enters the VPC endpoint, it will be processed by API Gateway. At this time, although the traffic has left the customer's VPC, it remains within the AWS trusted network;
 - 3: All requests need to be authenticated and authorized before being forwarded to downstream applications. This is generally achieved using Lambda Authorizer. For example, verify the access token included in the request is valid;
 - 4: After authentication and authorization, the request will access the application service in the customer VPC through VPC Link. Using VPC Link can ensure that the traffic enters the user's VPC directly without go through to the Internet;
-- 5: The application is published on Internal Application Load Balancer (Internal ALB), the VPC Link for Rest API supports forwarding requests to internal application load balancer through Network Load Balancer (NLB) to access application finally;
+- 5: The application is published on Internal Application Load Balancer (Internal ALB), the VPC Link for Rest API supports forwarding requests to internal application load balancer through internal Network Load Balancer (Internal NLB) to access application finally;
 
 Architectural notes:
 - We can see, the original cross VPC traffic will pass through the Amazon Transit Gateway (TGW). After using API Gateway, the traffic will be transferred within the AWS trusted network, and the original TGW components will no longer be required;
@@ -988,7 +987,7 @@ Let's go through the components and configuration details when the requests proc
 - 6 - To create a custom domain name, you need to match the test domain name `poc.api0413.aws.panlm.xyz` and have a certificate for that domain name in ACM. Create mapping and map the domain name to a specific stage. If the request URL has path pattern, you need to fill in as well;
 - 7 - To create a Rest type VPC Link, you need to create an NLB and an ALB type Target Group in advance, and register the ALB of the downstream application to this Target Group;
 - 8 - (Optional) Using Lambda authorizer. Once the authentication is successful, the necessary information can be obtained from the context ([link](https://docs.aws.amazon.com/apigateway/latest/developerguide/api-gateway-mapping-template-reference.html#context-variable-reference:~:text=context.authorizer.property)). For example, using the Access Token that comes with the Lambda authentication request, after success, the user's specific details can be obtained from the Access Token and provided as a header for direct use by downstream applications;
-- 9 - When request is sent to the Internal ALB, the certificate on Internal ALB is a self-signed certificate and imported into ACM in advance (without full certificate chain in ACM). There is no problem using such certificate on ALB, but if request comes from API Gateway, problems occurs;
+- 9 - When request is sent to the Internal ALB (Use TLD domain name only [link](https://en.wikipedia.org/wiki/List_of_Internet_top-level_domains)), the certificate on Internal ALB is a self-signed certificate and imported into ACM in advance (without full certificate chain in ACM). There is no problem using such certificate on ALB, but if request comes from API Gateway, problems occurs;
 	- First, API Gateway cannot verify self-signed certificates by default unless `tlsConfig/InsecureSkipVerification` is enabled ([link](https://aws.amazon.com/premiumsupport/knowledge-center/api-gateway-ssl-certificate-errors/)). Certificates will be verified successfully only when it includes full certificate chain in ACM.
 	- Second, each method and resource in each private API needs to be enabled individually via the command line, making work easier through this script ([link](http://aws-labs.panlm.xyz/900-others/990-command-line/script-api-resource-method.html)). Also, the format can be modified by exporting `API Gateway extensions` and re-importing the coverage;
 - 10 - Import other APIs that need to be tested and don't forgot to raise the limit of `Resources per API` in advance (default 300, see [link](https://docs.aws.amazon.com/apigateway/latest/developerguide/limits.html) for details);
