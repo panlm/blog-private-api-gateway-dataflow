@@ -17,6 +17,7 @@ title: This is a github note
 
 - [Foreword](#foreword)
 - [Architectural description](#architectural-description)
+	- [API Gateway](#api-gateway)
 - [Set up your lab environment](#set-up-your-lab-environment)
 	- [Prepare Environment](#prepare-environment)
 		- [Prepare AWS Cloud9 Environment](#prepare-aws-cloud9-environment)
@@ -28,11 +29,11 @@ title: This is a github note
 		- [Verify environment is ready](#verify-environment-is-ready)
 	- [Backend Applications](#backend-applications)
 	- [API Gateway](#api-gateway)
-		- [Step 1-2](#step-1-2)
-		- [Step 4](#step-4)
-		- [Step 5-7](#step-5-7)
-		- [Step 9-10](#step-9-10)
-		- [Step 12](#step-12)
+		- [Step 1-2 -- External ALB / Route53](#step-1-2----external-alb--route53)
+		- [Step 4 -- API Gateway VPCE](#step-4----api-gateway-vpce)
+		- [Step 5-7 -- VPC Link](#step-5-7----vpc-link)
+		- [Step 9-10 -- Private API / Custom Domain Name / Access Logging](#step-9-10----private-api--custom-domain-name--access-logging)
+		- [Step 12 -- Verification](#step-12----verification)
 - [Conclusion](#conclusion)
 - [References](#references)
 
@@ -75,6 +76,27 @@ This article verifies the following:
 - Based on corporate security compliance, data traffic needs to always be transmitted within the customer's VPC and within the AWS trusted network without transmission to the Internal accidentally;
 - Passing headers to downstream applications for comsumption, and customizing the Access Log with specific headers.
 - WAF does not include in this lab, reference [here](fake-waf-on-ec2-forwarding-https.md) for configuration
+
+### API Gateway
+
+Let's go through the components and configuration details when the requests processed by Amazon API Gateway, including the domain name and certificates, it will be easier for your to understand well.
+
+![apigw-dataflow-png-1.png](apigw-dataflow-png-1.png)
+
+- 1 - On the DNS server, resolve the test domain name `poc.api0413.aws.panlm.xyz` to the External ALB;
+- 2 - Put a certificate issued by a public CA (public certificate for short) on the External ALB and specified path rules for requests forwarding;
+- 3 - (Optional) Here, security devices can be equipped for traffic protection. For example, the previous step forwards the request to the specific port of the security appliance, and the rules corresponding to that port will filter all incoming traffic, then continue forwarding the request to the next step, which is API Gateway's VPC Endpoint;
+- 4 - Create a VPC endpoint for API Gateway and disable `Enable private DNS names`;
+- 5 - Create a private API, configure a resource policy, then deploy the API to stage `v1`. The stage name will be used as part of the mapping in the next step;
+- 6 - To create a custom domain name, you need to match the test domain name `poc.api0413.aws.panlm.xyz` and have a certificate for that domain name in ACM. Create mapping and map the domain name to a specific stage. If the request URL has path pattern, you need to fill in as well;
+- 7 - To create a Rest type VPC Link, you need to create an NLB and an ALB type Target Group in advance, and register the ALB of the downstream application to this Target Group;
+- 8 - (Optional) Using Lambda authorizer. Once the authentication is successful, the necessary information can be obtained from the context ([link](https://docs.aws.amazon.com/apigateway/latest/developerguide/api-gateway-mapping-template-reference.html#context-variable-reference:~:text=context.authorizer.property)). For example, using the Access Token that comes with the Lambda authentication request, after success, the user's specific details can be obtained from the Access Token and provided as a header for direct use by downstream applications;
+- 9 - When request is sent to the Internal ALB (Use TLD domain name only [link](https://en.wikipedia.org/wiki/List_of_Internet_top-level_domains)), the certificate on Internal ALB is a self-signed certificate and imported into ACM in advance (without full certificate chain in ACM). There is no problem using such certificate on ALB, but if request comes from API Gateway, problems occurs;
+	- First, API Gateway cannot verify self-signed certificates by default unless `tlsConfig/InsecureSkipVerification` is enabled ([link](https://aws.amazon.com/premiumsupport/knowledge-center/api-gateway-ssl-certificate-errors/)). Certificates will be verified successfully only when it includes full certificate chain in ACM.
+	- Second, each method and resource in each private API needs to be enabled individually via the command line, making work easier through this script ([link](http://aws-labs.panlm.xyz/900-others/990-command-line/script-api-resource-method.html)). Also, the format can be modified by exporting `API Gateway extensions` and re-importing the coverage;
+- 10 - Import other APIs that need to be tested and don't forgot to raise the limit of `Resources per API` in advance (default 300, see [link](https://docs.aws.amazon.com/apigateway/latest/developerguide/limits.html) for details);
+- 11 - To Internal ALB, the certificate must meet requirements in step 9;
+- 12 - Verification, direct access to the private API through the test domain name `poc.api0413.aws.panlm.xyz`;
 
 ## Set up your lab environment
 
@@ -975,26 +997,11 @@ kubectl apply --filename httpbin.yaml -n httpbin
 
 ### API Gateway
 
-Let's go through the components and configuration details when the requests processed by Amazon API Gateway, including the domain name and certificates, it will be easier for your to understand well.
+Let's follow the components and configuration details we mentioned before to build lab environment.
 
 ![apigw-dataflow-png-1.png](apigw-dataflow-png-1.png)
 
-- 1 - On the DNS server, resolve the test domain name `poc.api0413.aws.panlm.xyz` to the External ALB;
-- 2 - Put a certificate issued by a public CA (public certificate for short) on the External ALB and specified path rules for requests forwarding;
-- 3 - (Optional) Here, security devices can be equipped for traffic protection. For example, the previous step forwards the request to the specific port of the security appliance, and the rules corresponding to that port will filter all incoming traffic, then continue forwarding the request to the next step, which is API Gateway's VPC Endpoint;
-- 4 - Create a VPC endpoint for API Gateway and disable `Enable private DNS names`;
-- 5 - Create a private API, configure a resource policy, then deploy the API to stage `v1`. The stage name will be used as part of the mapping in the next step;
-- 6 - To create a custom domain name, you need to match the test domain name `poc.api0413.aws.panlm.xyz` and have a certificate for that domain name in ACM. Create mapping and map the domain name to a specific stage. If the request URL has path pattern, you need to fill in as well;
-- 7 - To create a Rest type VPC Link, you need to create an NLB and an ALB type Target Group in advance, and register the ALB of the downstream application to this Target Group;
-- 8 - (Optional) Using Lambda authorizer. Once the authentication is successful, the necessary information can be obtained from the context ([link](https://docs.aws.amazon.com/apigateway/latest/developerguide/api-gateway-mapping-template-reference.html#context-variable-reference:~:text=context.authorizer.property)). For example, using the Access Token that comes with the Lambda authentication request, after success, the user's specific details can be obtained from the Access Token and provided as a header for direct use by downstream applications;
-- 9 - When request is sent to the Internal ALB (Use TLD domain name only [link](https://en.wikipedia.org/wiki/List_of_Internet_top-level_domains)), the certificate on Internal ALB is a self-signed certificate and imported into ACM in advance (without full certificate chain in ACM). There is no problem using such certificate on ALB, but if request comes from API Gateway, problems occurs;
-	- First, API Gateway cannot verify self-signed certificates by default unless `tlsConfig/InsecureSkipVerification` is enabled ([link](https://aws.amazon.com/premiumsupport/knowledge-center/api-gateway-ssl-certificate-errors/)). Certificates will be verified successfully only when it includes full certificate chain in ACM.
-	- Second, each method and resource in each private API needs to be enabled individually via the command line, making work easier through this script ([link](http://aws-labs.panlm.xyz/900-others/990-command-line/script-api-resource-method.html)). Also, the format can be modified by exporting `API Gateway extensions` and re-importing the coverage;
-- 10 - Import other APIs that need to be tested and don't forgot to raise the limit of `Resources per API` in advance (default 300, see [link](https://docs.aws.amazon.com/apigateway/latest/developerguide/limits.html) for details);
-- 11 - To Internal ALB, the certificate must meet requirements in step 9;
-- 12 - Verification, direct access to the private API through the test domain name `poc.api0413.aws.panlm.xyz`;
-
-#### Step 1-2
+#### Step 1-2 -- External ALB / Route53
 
 **External ALB**
 - Create an External ALB in the VPC where Cloud9 is located in.
@@ -1111,7 +1118,7 @@ aws route53 change-resource-record-sets --hosted-zone-id ${ZONE_ID} --change-bat
 aws route53 list-resource-record-sets --hosted-zone-id ${ZONE_ID} --query "ResourceRecordSets[?Name == '${POC_HOSTNAME}.']"
 ```
 
-#### Step 4
+#### Step 4 -- API Gateway VPCE
 
 **API Gateway VPCE**
 - In the VPC where Cloud9 is located in, create a VPC endpoint for API Gateway. This is a prerequisite for using a private API
@@ -1148,7 +1155,7 @@ aws elbv2 register-targets \
 --targets ${targets}
 ```
 
-#### Step 5-7
+#### Step 5-7 -- VPC Link
 
 **VPC Link**
 - In the VPC where EKS is located in, create an NLB for the application's Internal ALB
@@ -1214,7 +1221,7 @@ watch -g -n 60 aws apigateway get-vpc-link \
 --query 'status'
 ```
 
-#### Step 9-10
+#### Step 9-10 -- Private API / Custom Domain Name / Access Logging
 
 **API with VPC Link**
 ![apigw-dataflow-png-2.png](apigw-dataflow-png-2.png)
@@ -1423,7 +1430,7 @@ aws apigateway update-stage \
 --cli-input-json file://access-log-settings.json
 ```
 
-#### Step 12
+#### Step 12 -- Verification
 
 **Verify application is accessable**
 - Access the link below from another device's browser, it will request `/httpbin` resource in API definition. We have enabled `Use Proxy Integration` in API. 

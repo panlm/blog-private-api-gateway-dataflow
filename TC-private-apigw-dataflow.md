@@ -17,6 +17,7 @@ title: This is a github note
 
 - [前言](#%E5%89%8D%E8%A8%80)
 - [架构描述](#%E6%9E%B6%E6%9E%84%E6%8F%8F%E8%BF%B0)
+	- [API Gateway](#api-gateway)
 - [搭建实验环境](#%E6%90%AD%E5%BB%BA%E5%AE%9E%E9%AA%8C%E7%8E%AF%E5%A2%83)
 	- [环境准备](#%E7%8E%AF%E5%A2%83%E5%87%86%E5%A4%87)
 		- [准备 AWS Cloud9 实验环境](#%E5%87%86%E5%A4%87-aws-cloud9-%E5%AE%9E%E9%AA%8C%E7%8E%AF%E5%A2%83)
@@ -28,11 +29,11 @@ title: This is a github note
 		- [验证环境就绪](#%E9%AA%8C%E8%AF%81%E7%8E%AF%E5%A2%83%E5%B0%B1%E7%BB%AA)
 	- [后端应用](#%E5%90%8E%E7%AB%AF%E5%BA%94%E7%94%A8)
 	- [API Gateway](#api-gateway)
-		- [步骤 1-2](#%E6%AD%A5%E9%AA%A4-1-2)
-		- [步骤 4](#%E6%AD%A5%E9%AA%A4-4)
-		- [步骤 5-7](#%E6%AD%A5%E9%AA%A4-5-7)
-		- [步骤 9-10](#%E6%AD%A5%E9%AA%A4-9-10)
-		- [步骤 12](#%E6%AD%A5%E9%AA%A4-12)
+		- [步骤 1-2 -- External ALB / Route53](#%E6%AD%A5%E9%AA%A4-1-2----external-alb--route53)
+		- [步骤 4 -- API Gateway VPCE](#%E6%AD%A5%E9%AA%A4-4----api-gateway-vpce)
+		- [步骤 5-7 -- VPC Link](#%E6%AD%A5%E9%AA%A4-5-7----vpc-link)
+		- [步骤 9-10 -- Private API / Custom Domain Name / Access Logging](#%E6%AD%A5%E9%AA%A4-9-10----private-api--custom-domain-name--access-logging)
+		- [步骤 12 -- 验证](#%E6%AD%A5%E9%AA%A4-12----%E9%AA%8C%E8%AF%81)
 - [结论](#%E7%BB%93%E8%AE%BA)
 - [参考资料](#%E5%8F%82%E8%80%83%E8%B5%84%E6%96%99)
 
@@ -76,6 +77,27 @@ Amazon API Gateway 可以直接暴露到公网访问，无需前置任何负载�
 - 基于企业安全合规要求，数据流量需要始终保持在客户 VPC 内部以及 AWS 可信网络内部传输，不会意外传输到公网；
 - 标头传递到下游应用中使用，以及使用特定标头定制 Access Log
 - 实验环境中将跳过 WAF 组件，如果需要参照[这里](fake-waf-on-ec2-forwarding-https.md)配置
+
+### API Gateway
+
+我们梳理下请求经过 API Gateway 过程中需要经过那些组件以及相应的配置细节信息，包括需要绑定的域名以及证书信息，这样会有利于理解。
+
+![apigw-dataflow-png-1.png](apigw-dataflow-png-1.png)
+
+- 1 -  DNS 服务器上，将测试域名 `poc.api0413.aws.panlm.xyz` 解析到外部的 ALB 上；
+- 2 - 公有 CA 签发的证书（简称公有证书），配置在外部的 ALB 上，并且指定路径规则将请求进行转发；
+- 3 - （可选）此处可以选配安全设备进行 7 层的流量过滤和防护。例如，上一步将请求转发到安全设备特定端口，该端口对应的规则将对所有进入流量进行过滤，然后继续将请求转发到下一步，即 API Gateway 的 VPC Endpoint；
+- 4 - 创建 API Gateway 的 VPC Endpoint ，且禁用 `Enable private DNS names`；
+- 5 - 创建私有 API ，配置 Resource Policy ，然后部署 API 到 Stage `v1` ，下一步中将使用这个 Stage 名称作为 Mapping 的一部分；
+- 6 - 创建定制域名，需要与测试域名 `poc.api0413.aws.panlm.xyz` 一致，且在 ACM 中有该域名的证书。创建 Mapping，将域名映射到特定 Stage 上，如果请求 URL 带有路径信息（ Path Pattern ），则需要填入对应路径信息；
+- 7 - 创建 Rest 类型 VPC Link，需要提前创建 NLB 以及 ALB 类型的 Target Group，并将下游应用的 ALB 注册到该 Target Group 上；
+- 8 - （可选）使用 Lambda 验证鉴权。一旦鉴权成功，便可从上下文中获取到必要的信息 ([链接](https://docs.aws.amazon.com/apigateway/latest/developerguide/api-gateway-mapping-template-reference.html#context-variable-reference:~:text=context.authorizer.property))。比如，使用 Lambda 鉴权请求中自带的 Access Token，成功之后可以从 Access Token 中获取到用户具体详情，作为 header 提供下游应用直接使用；
+- 9 - 请求发送到内部应用 ALB 时（确保只使用标准 TLD 域名，参考[链接](https://en.wikipedia.org/wiki/List_of_Internet_top-level_domains)），ALB 使用的证书是自签名证书，且提前导入到 ACM 中（未包含完整证书链），这样的证书使用在 ALB 上是没问题的，但是作为 API Gateway 下游请求的话，则会遇到问题；
+	- 首先，API Gateway 默认无法验证自签名证书，除非启用 `tlsConfig/insecureSkipVerification` ([链接](https://aws.amazon.com/premiumsupport/knowledge-center/api-gateway-ssl-certificate-errors/))，且启用后也仅验证包含完整证书链的自签名证书；
+	- 其次， 每个 API 的每个 Resource 的每个 Method 都需要单独通过命令行启用，通过这个脚本简化工作 ([链接](http://aws-labs.panlm.xyz/900-others/990-command-line/script-api-resource-method.html))。另外，可以通过导出带 `API Gateway extensions` 的格式修改，并重新导入覆盖；
+- 10 - 导入其他需要测试的 API ，提前提升上限 `Resources per API` （默认 300，详见[链接](https://docs.aws.amazon.com/apigateway/latest/developerguide/limits.html)）；
+- 11 - 应用 ALB，证书需要满足步骤 9；
+- 12 - 验证，通过测试域名 `poc.api0413.aws.panlm.xyz` 直接访问私有 API；
 
 
 ## 搭建实验环境
@@ -977,26 +999,11 @@ kubectl apply --filename httpbin.yaml -n httpbin
 
 ### API Gateway
 
-我们来先梳理下请求经过 API Gateway 过程中需要经过那些组件以及相应的配置细节信息，包括需要绑定的域名以及证书信息，这样会有利于理解。
+按照之前描述的内容创建实验环境：
 
 ![apigw-dataflow-png-1.png](apigw-dataflow-png-1.png)
 
-- 1 -  DNS 服务器上，将测试域名 `poc.api0413.aws.panlm.xyz` 解析到外部的 ALB 上；
-- 2 - 公有 CA 签发的证书（简称公有证书），配置在外部的 ALB 上，并且指定路径规则将请求进行转发；
-- 3 - （可选）此处可以选配安全设备进行 7 层的流量过滤和防护。例如，上一步将请求转发到安全设备特定端口，该端口对应的规则将对所有进入流量进行过滤，然后继续将请求转发到下一步，即 API Gateway 的 VPC Endpoint；
-- 4 - 创建 API Gateway 的 VPC Endpoint ，且禁用 `Enable private DNS names`；
-- 5 - 创建私有 API ，配置 Resource Policy ，然后部署 API 到 Stage `v1` ，下一步中将使用这个 Stage 名称作为 Mapping 的一部分；
-- 6 - 创建定制域名，需要与测试域名 `poc.api0413.aws.panlm.xyz` 一致，且在 ACM 中有该域名的证书。创建 Mapping，将域名映射到特定 Stage 上，如果请求 URL 带有路径信息（ Path Pattern ），则需要填入对应路径信息；
-- 7 - 创建 Rest 类型 VPC Link，需要提前创建 NLB 以及 ALB 类型的 Target Group，并将下游应用的 ALB 注册到该 Target Group 上；
-- 8 - （可选）使用 Lambda 验证鉴权。一旦鉴权成功，便可从上下文中获取到必要的信息 ([链接](https://docs.aws.amazon.com/apigateway/latest/developerguide/api-gateway-mapping-template-reference.html#context-variable-reference:~:text=context.authorizer.property))。比如，使用 Lambda 鉴权请求中自带的 Access Token，成功之后可以从 Access Token 中获取到用户具体详情，作为 header 提供下游应用直接使用；
-- 9 - 请求发送到内部应用 ALB 时（确保只使用标准 TLD 域名，参考[链接](https://en.wikipedia.org/wiki/List_of_Internet_top-level_domains)），ALB 使用的证书是自签名证书，且提前导入到 ACM 中（未包含完整证书链），这样的证书使用在 ALB 上是没问题的，但是作为 API Gateway 下游请求的话，则会遇到问题；
-	- 首先，API Gateway 默认无法验证自签名证书，除非启用 `tlsConfig/insecureSkipVerification` ([链接](https://aws.amazon.com/premiumsupport/knowledge-center/api-gateway-ssl-certificate-errors/))，且启用后也仅验证包含完整证书链的自签名证书；
-	- 其次， 每个 API 的每个 Resource 的每个 Method 都需要单独通过命令行启用，通过这个脚本简化工作 ([链接](http://aws-labs.panlm.xyz/900-others/990-command-line/script-api-resource-method.html))。另外，可以通过导出带 `API Gateway extensions` 的格式修改，并重新导入覆盖；
-- 10 - 导入其他需要测试的 API ，提前提升上限 `Resources per API` （默认 300，详见[链接](https://docs.aws.amazon.com/apigateway/latest/developerguide/limits.html)）；
-- 11 - 应用 ALB，证书需要满足步骤 9；
-- 12 - 验证，通过测试域名 `poc.api0413.aws.panlm.xyz` 直接访问私有 API；
-
-#### 步骤 1-2 
+#### 步骤 1-2 -- External ALB / Route53
 
 **External ALB**
 - 在 Cloud9 所在的 VPC 中，创建外部负载均衡
@@ -1113,7 +1120,7 @@ aws route53 change-resource-record-sets --hosted-zone-id ${ZONE_ID} --change-bat
 aws route53 list-resource-record-sets --hosted-zone-id ${ZONE_ID} --query "ResourceRecordSets[?Name == '${POC_HOSTNAME}.']"
 ```
 
-#### 步骤 4
+#### 步骤 4 -- API Gateway VPCE
 
 **API Gateway VPCE**
 - 在 Cloud9 所在的 VPC 中，创建 API Gateway 的 VPC Endpoint，这是使用私有 API 的前置条件
@@ -1150,7 +1157,7 @@ aws elbv2 register-targets \
 --targets ${targets}
 ```
 
-#### 步骤 5-7
+#### 步骤 5-7 -- VPC Link
 
 **VPC Link**
 - 在 EKS 所在的 VPC 中，为应用的内部负载均衡 (Internal ALB) 创建 NLB
@@ -1216,7 +1223,7 @@ watch -g -n 60 aws apigateway get-vpc-link \
 --query 'status'
 ```
 
-####  步骤 9-10 
+####  步骤 9-10 -- Private API / Custom Domain Name / Access Logging
 
 **API with VPC Link**
 ![apigw-dataflow-png-2.png](apigw-dataflow-png-2.png)
@@ -1425,7 +1432,7 @@ aws apigateway update-stage \
 --cli-input-json file://access-log-settings.json
 ```
 
-#### 步骤 12
+#### 步骤 12 -- 验证
 
 **验证应用可用**
 - 从其他设备浏览器访问下面链接时，将请求 API `/httpbin`。该 API 启用 `Use Proxy Integration` 
