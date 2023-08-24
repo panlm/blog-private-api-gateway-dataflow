@@ -86,7 +86,7 @@ Amazon API Gateway 可以直接暴露到公网访问，无需前置任何负载�
 
 - 1 -  DNS 服务器上，将测试域名 `poc.api0413.aws.panlm.xyz` 解析到外部的 ALB 上；
 - 2 - 公有 CA 签发的证书（简称公有证书），配置在外部的 ALB 上，并且指定路径规则将请求进行转发；
-- 3 - （可选）此处可以选配安全设备进行 7 层的流量过滤和防护。例如，上一步将请求转发到安全设备特定端口，该端口对应的规则将对所有进入流量进行过滤，然后继续将请求转发到下一步，即 API Gateway 的 VPC Endpoint；
+- 3 - （可选）此处可以选配安全设备进行 7 层的流量过滤和防护（参照[这里](fake-waf-on-ec2-forwarding-https.md)配置）。例如，上一步将请求转发到安全设备特定端口，该端口对应的规则将对所有进入流量进行过滤，然后继续将请求转发到下一步，即 API Gateway 的 VPC Endpoint；
 - 4 - 创建 API Gateway 的 VPC Endpoint ，且禁用 `Enable private DNS names`；
 - 5 - 创建私有 API ，配置 Resource Policy ，然后部署 API 到 Stage `v1` ，下一步中将使用这个 Stage 名称作为 Mapping 的一部分；
 - 6 - 创建定制域名，需要与测试域名 `poc.api0413.aws.panlm.xyz` 一致，且在 ACM 中有该域名的证书。创建 Mapping，将域名映射到特定 Stage 上，如果请求 URL 带有路径信息（ Path Pattern ），则需要填入对应路径信息；
@@ -122,7 +122,7 @@ Amazon API Gateway 可以直接暴露到公网访问，无需前置任何负载�
 本文使用 AWS Global 的账号，在区域 us-east-2 中搭建。按照下面步骤创建所需的资源。
 
 #### 准备 AWS Cloud9 实验环境 
-([链接](http://aws-labs.panlm.xyz/20-cloud9/setup-cloud9-for-eks.html))
+(参考[链接](http://aws-labs.panlm.xyz/20-cloud9/setup-cloud9-for-eks.html))
 
 -  点击[这里](https://us-east-2.console.aws.amazon.com/cloudshell) 运行 cloudshell，执行代码块创建 cloud9 测试环境 
 ```sh
@@ -561,10 +561,11 @@ kubectl get deployment -n kube-system aws-load-balancer-controller
 	- 确保使用正确的 Region 
 	- 确保上游域名已存在，本例中将创建 `api0413.aws.panlm.xyz` 域名，因此确保 `aws.panlm.xyz` 已存在
 ```sh
-echo ${CLUSTER_NAME}
-echo ${AWS_REGION}
 DOMAIN_NAME=api0413.aws.panlm.xyz
 EXTERNALDNS_NS=externaldns
+
+echo ${CLUSTER_NAME}
+echo ${AWS_REGION}
 export AWS_PAGER=""
 
 # create namespace if it does not yet exist

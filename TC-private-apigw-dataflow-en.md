@@ -85,7 +85,7 @@ Let's go through the components and configuration details when the requests proc
 
 - 1 - On the DNS server, resolve the test domain name `poc.api0413.aws.panlm.xyz` to the External ALB;
 - 2 - Put a certificate issued by a public CA (public certificate for short) on the External ALB and specified path rules for requests forwarding;
-- 3 - (Optional) Here, security devices can be equipped for traffic protection. For example, the previous step forwards the request to the specific port of the security appliance, and the rules corresponding to that port will filter all incoming traffic, then continue forwarding the request to the next step, which is API Gateway's VPC Endpoint;
+- 3 - (Optional) Here, security devices can be equipped for traffic protection (reference [here](fake-waf-on-ec2-forwarding-https.md) for configuration). For example, the previous step forwards the request to the specific port of the security appliance, and the rules corresponding to that port will filter all incoming traffic, then continue forwarding the request to the next step, which is API Gateway's VPC Endpoint;
 - 4 - Create a VPC endpoint for API Gateway and disable `Enable private DNS names`;
 - 5 - Create a private API, configure a resource policy, then deploy the API to stage `v1`. The stage name will be used as part of the mapping in the next step;
 - 6 - To create a custom domain name, you need to match the test domain name `poc.api0413.aws.panlm.xyz` and have a certificate for that domain name in ACM. Create mapping and map the domain name to a specific stage. If the request URL has path pattern, you need to fill in as well;
@@ -120,9 +120,9 @@ The latest version of the code covered in this article can be obtained from [Git
 This article uses an AWS Global account to set up in region us-east-2. Follow these steps to create the relevant resources.
 
 #### Prepare AWS Cloud9 Environment
-([link](http://aws-labs.panlm.xyz/20-cloud9/setup-cloud9-for-eks.html))
+(check [here](http://aws-labs.panlm.xyz/20-cloud9/setup-cloud9-for-eks.html) for latest version)
 
--  open [link](https://console.aws.amazon.com/cloudshell) cloudshell, and then execute following code to create cloud9 environment
+-  open [link](https://us-east-2.console.aws.amazon.com/cloudshell) cloudshell, and then execute following code to create cloud9 environment
 ```sh
 # name=<give your cloud9 a name>
 datestring=$(date +%Y%m%d-%H%M)
@@ -558,10 +558,11 @@ kubectl get deployment -n kube-system aws-load-balancer-controller
 	- 确保使用正确的 Region  (ensure region is correct)
 	- 确保上游域名已存在，本例中将创建 `api0413.aws.panlm.xyz` 域名，因此确保 `aws.panlm.xyz` 已存在 (ensure upstream domain registrar is existed. In this blog, we will create `api0413.aws.panlm.xyz` hosted zone, you need ensure `aws.panlm.xyz` is existed)
 ```sh
-echo ${CLUSTER_NAME}
-echo ${AWS_REGION}
 DOMAIN_NAME=api0413.aws.panlm.xyz
 EXTERNALDNS_NS=externaldns
+
+echo ${CLUSTER_NAME}
+echo ${AWS_REGION}
 export AWS_PAGER=""
 
 # create namespace if it does not yet exist
