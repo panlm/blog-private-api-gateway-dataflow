@@ -81,13 +81,14 @@ title: This is a github note
 
 ### 配置 VPC 互通
 
-- 创建实验用的 Cloud9，参考[链接](TC-private-apigw-dataflow#%E5%87%86%E5%A4%87%20AWS%20Cloud9%20%E5%AE%9E%E9%AA%8C%E7%8E%AF%E5%A2%83.md) 
+- 创建实验用的 Cloud9，参考[链接](https://github.com/panlm/panlm.github.io/blob/main/content/20-cloud9/quick-setup-cloud9-script.md) 
 - 开始配置 VPC 互通
 ```sh
 CLUSTER_NAME=ekscluster1
 AWS_REGION=$(curl -s 169.254.169.254/latest/dynamic/instance-identity/document | jq -r '.region')
 export AWS_DEFAULT_REGION=${AWS_REGION}
 export AWS_PAGER=""
+
 ```
 
 - 创建 TGW 
@@ -100,6 +101,7 @@ TGW_ID=$(cat $tmp.1 |jq -r '.TransitGateway.TransitGatewayId')
 watch -g -n 60 aws ec2 describe-transit-gateways \
 --transit-gateway-ids $TGW_ID \
 --query 'TransitGateways[].State' --output text
+
 ```
 
 ^yq2usv
@@ -125,6 +127,7 @@ aws ec2 create-transit-gateway-vpc-attachment \
 --vpc-id ${VPC_ID} \
 --subnet-ids ${SUBNET_IDS} \
 --tag-specifications 'ResourceType=transit-gateway-attachment,Tags=[{Key=Name,Value=att-'"${VPC_ID}"'}]'
+
 ```
 
 ^x1asti
@@ -152,6 +155,7 @@ aws ec2 create-transit-gateway-vpc-attachment \
 
 # waiting both attachments created successfully
 sleep 30
+
 ```
 
 - 编辑路由表实现两个 VPC 互通
@@ -175,6 +179,7 @@ done
 
 # if you got error "InvalidTransitGatewayID.NotFound"
 # just re-run this code block
+
 ```
 
 ^lyckqs
@@ -239,6 +244,7 @@ while true ; do
     break
   fi
 done
+
 ```
 
 - 打通 Ingress VPC 到 APP-2 VPC 的路由
@@ -257,6 +263,7 @@ for i in ${ROUTE_TABLES[@]}; do
 done
 
 done
+
 ```
 
 ### 在 Cloud9 VPC 中创建跨环境负载均衡 CrossENV NLB
@@ -273,6 +280,7 @@ echo ${DOMAIN_NAME} # like "api0809.aws.panlm.xyz"
 
 CERTIFICATE_ARN=$(aws acm list-certificates --query "CertificateSummaryList[?DomainName=='*.${DOMAIN_NAME}'].CertificateArn" --output text)
 echo ${CERTIFICATE_ARN}
+
 ```
 
 - 创建跨环境 CrossENV NLB
@@ -331,6 +339,7 @@ done |xargs )
 aws elbv2 register-targets \
 --target-group-arn ${tg_tls_arn} \
 --targets ${targets}
+
 ```
 
 ### 配置内网域名
@@ -368,6 +377,7 @@ ZONE_ID=$(aws route53 list-hosted-zones-by-name \
 aws route53 change-resource-record-sets --hosted-zone-id ${ZONE_ID} --change-batch file://internal-route53-record.json
 
 aws route53 list-resource-record-sets --hosted-zone-id ${ZONE_ID} --query "ResourceRecordSets[?Name == '${INTERNAL_HOSTNAME}.']"
+
 ```
 
 ### 配置自定义域名映射
@@ -380,8 +390,10 @@ aws route53 list-resource-record-sets --hosted-zone-id ${ZONE_ID} --query "Resou
 ### 跨环境访问
 
 - 创建 EC2 实例
-	- 在 APP-2 VPC 中 Private Subnet 中（默认为 `10.129.0.0/16`，由 Cloudformation 创建）
-	- 不需要指定 Key （通过 SSM Session Manager 访问，相关Endpoint 由 Cloudformation 创建）
+	- 使用 Amazon Linux 2 AMI
+	- 选择合适的规格例如 m5.large
+	- 不需要指定 Key Pair（通过 SSM Session Manager 访问，相关Endpoint 由 Cloudformation 创建）
+	 - 在 APP-2 VPC 中 Private Subnet 中（默认为 `10.129.0.0/16`，由 Cloudformation 创建）
 - 创建角色分配给 EC2，包含策略 `AmazonSSMManagedInstanceCore`，重启实例，确保可以使用 SSM Session Manager 访问（参考[文档](https://docs.aws.amazon.com/en_us/console/systems-manager/qs-host-management)）
 - 从该 EC2 发起请求，访问内网的域名：
 ```sh

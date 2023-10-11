@@ -3,11 +3,11 @@ title: fake-waf-on-ec2-forwarding-https
 description: 使用 NGINX 模拟 WAF 转发 HTTPS 请求
 chapter: true
 created: 2023-07-17 16:02:12.084
-last_modified: 2023-07-17 16:02:12.084
-tags: 
-- aws/security/waf 
-- aws/serverless/api-gateway 
-- nginx 
+last_modified: 2023-10-11 10:06:49.890
+tags:
+  - aws/security/waf
+  - aws/serverless/api-gateway
+  - nginx
 ---
 
 ```ad-attention
@@ -25,6 +25,7 @@ title: This is a github note
 ## Diagram
 
 In blog's diagram, we mentioned when you expose private API, need using ALB + WAF to keep it security. But we do not include this part in lab, we added API gateway endpoint's IP addresses to ALB directly. 
+
 If you try to simulate WAF component in this scenario, follow one of next two chapters to create fake WAF (the "Layer 7 forwarding with NGINX" is prefer) and then add fake WAF's IP address to ALB instead of endpoint's IP addresses.
 
 ## Layer 7 forwarding with NGINX (prefer)
@@ -120,7 +121,7 @@ useradd -g www www
 ![fake-waf-on-ec2-forwarding-https-png-1.png](fake-waf-on-ec2-forwarding-https-png-1.png)
 
 ## Layer 4 forwarding with iptables
-this option could only forward traffic to one of endpoint ip addresses, not forward traffic to vpce domain name. 
+- if you have multiple endpoint ip addresses to forward, using random or round robin balancing (refer [link](https://scalingo.com/blog/iptables))
 
 - need `ip_forward=1` in OS
 ```sh
@@ -129,6 +130,7 @@ this option could only forward traffic to one of endpoint ip addresses, not forw
 echo "net.ipv4.ip_forward = 1" >> /etc/sysctl.d/00-defaults.conf
 sysctl -p /etc/sysctl.d/00-defaults.conf 
 ```
+
 - need stop source/dest check in EC2
 - install and flush iptables
 ```sh
@@ -148,22 +150,24 @@ iptables -t mangle -F;
 iptables -F;
 iptables -X;
 ```
+
 - configure
 ```sh
-instance_ip=172.31.82.94
-vpce_ip=172.31.90.106 # one ip address of vpce domain name
+instance_ip=172.31.17.223 # instance internal ip address
+next_ip=3.15.136.123 # one ip address of vpce domain name
 
-# get alb internal ip addresses
-for i in 172.31.73.14 172.31.3.235 172.31.90.92 172.31.63.94 172.31.31.15 172.31.46.17; do
-  iptables -t nat -A PREROUTING -p tcp -s $i -d $instance_ip -i eth0 -j DNAT --to-destination $vpce_ip:443;
+# get alb/nlb internal ip addresses
+for i in 172.31.20.112 172.31.33.21; do
+  iptables -t nat -A PREROUTING -p tcp -s $i -d $instance_ip -i eth0 -j DNAT --to-destination $next_ip:443;
 done
 
-iptables -t nat -A POSTROUTING -p tcp --dport 443 -s 172.31.0.0/16 -d $vpce_ip -o eth0 -j MASQUERADE;
+iptables -t nat -A POSTROUTING -p tcp --dport 443 -s 172.31.0.0/16 -d $next_ip -o eth0 -j MASQUERADE;
+
 ```
 
 
 ## refer
 - https://docs.nginx.com/nginx/admin-guide/security-controls/securing-http-traffic-upstream/
 - https://www.alibabacloud.com/blog/how-to-use-nginx-as-an-https-forward-proxy-server_595799
-
+- https://scalingo.com/blog/iptables
 

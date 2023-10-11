@@ -469,7 +469,6 @@ cat $$.yaml |envsubst '$CLUSTER_NAME $AWS_REGION $AZ0 $AZ1 $EKS_VERSION $CIDR ' 
 - 创建集群，预计需要 20 分钟 (wait cluster create successfully, about 20 mins)
 ```sh
 eksctl create cluster -f cluster-${CLUSTER_NAME}.yaml
-
 ```
 
 #### Install AWS Load Balancer Controller 
@@ -802,6 +801,7 @@ Verify that the application exposed successfully and the certificate is valid ([
 ```sh
 NS=verify
 kubectl create ns ${NS}
+
 ```
 
 - create NLB with service definition
@@ -983,17 +983,20 @@ spec:
 EOF
 
 kubectl create --filename httpbin.yaml -n httpbin
+
 ```
 
 - Wait for ALB to be available and verify that the app is accessible from the Internet directly
 ```sh
 curl https://httpbin.${DOMAIN_NAME}/anything
+
 ```
 
 - Let's update the Ingress yaml file and change the ALB type from Internet-facing to Internal. make it as the downstream HTTP endpoint of private API
 ```sh
 sed -i 's/internet-facing/internal/' httpbin.yaml
 kubectl apply --filename httpbin.yaml -n httpbin
+
 ```
 
 ### API Gateway
@@ -1081,6 +1084,7 @@ aws elbv2 create-rule --listener-arn ${listener_arn} \
 --conditions file:///tmp/path-pattern.json \
 --priority 5 \
 --actions Type=forward,TargetGroupArn=${tg1_arn}
+
 ```
 
 **Route53**
@@ -1117,6 +1121,7 @@ ZONE_ID=$(aws route53 list-hosted-zones-by-name \
 aws route53 change-resource-record-sets --hosted-zone-id ${ZONE_ID} --change-batch file://poc-route53-record.json
 
 aws route53 list-resource-record-sets --hosted-zone-id ${ZONE_ID} --query "ResourceRecordSets[?Name == '${POC_HOSTNAME}.']"
+
 ```
 
 #### Step 4 -- API Gateway VPCE
@@ -1154,6 +1159,7 @@ done |xargs )
 aws elbv2 register-targets \
 --target-group-arn ${tg1_arn} \
 --targets ${targets}
+
 ```
 
 #### Step 5-7 -- VPC Link
@@ -1207,6 +1213,7 @@ aws elbv2 create-listener --load-balancer-arn ${nlb1_arn} \
 watch -g -n 60 aws elbv2 describe-load-balancers \
 --load-balancer-arns ${nlb1_arn} \
 --query 'LoadBalancers[0].State'
+
 ```
 
 - Wait for the NLB status to be available, then create a VPC Link
@@ -1220,6 +1227,7 @@ VPCLINK_ID=$(cat /tmp/$$.6 |jq -r '.id')
 watch -g -n 60 aws apigateway get-vpc-link \
 --vpc-link-id ${VPCLINK_ID} \
 --query 'status'
+
 ```
 
 #### Step 9-10 -- Private API / Custom Domain Name / Access Logging
@@ -1329,6 +1337,7 @@ API_ID=$(cat /tmp/$$.7 |jq -r '.id')
 
 aws apigateway create-deployment \
 --rest-api-id ${API_ID} --stage-name v1 
+
 ```
 
 **Custom Domain Name**
@@ -1348,6 +1357,7 @@ aws apigateway create-base-path-mapping \
 --rest-api-id ${API_ID} \
 --stage v1 \
 --base-path "${URI_PREFIX}"
+
 ```
 
 **Custom Access Logging**
@@ -1387,6 +1397,7 @@ echo ${role_arn}
 # copy above output
 # add role to api gateway settings
 ###
+
 ```
 
 - Create a dedicated CloudWatch log group
@@ -1398,6 +1409,7 @@ LOGGROUP_ARN=$(aws logs describe-log-groups \
 --log-group-name-prefix ${LOGGROUP_NAME} \
 --query 'logGroups[0].arn' --output text)
 LOGGROUP_ARN=${LOGGROUP_ARN%:*}
+
 ```
 
 - Update the configuration of stage, and customize the Access Log log output format
@@ -1429,6 +1441,7 @@ aws apigateway update-stage \
 --rest-api-id $API_ID \
 --stage-name v1 \
 --cli-input-json file://access-log-settings.json
+
 ```
 
 #### Step 12 -- Verification
@@ -1437,6 +1450,7 @@ aws apigateway update-stage \
 - Access the link below from another device's browser, it will request `/httpbin` resource in API definition. We have enabled `Use Proxy Integration` in API. 
 ```sh
 echo "curl https://${POC_HOSTNAME}/${URI_PREFIX}/httpbin"
+
 ```
 
 ![apigw-dataflow-png-3.png](apigw-dataflow-png-3.png)
@@ -1451,6 +1465,7 @@ echo "curl https://${POC_HOSTNAME}/${URI_PREFIX}/httpbin"
 - Access the link below from another device's browser, it will request `/httpbin/{proxy+}` resource in API definition. we do not enable `Use Proxy Integration` in API. The reason is we need to forward custom headers to downstream applications. 
 ```sh
 echo "curl https://${POC_HOSTNAME}/${URI_PREFIX}/httpbin/anything"
+
 ```
 
 ![apigw-dataflow-png-4.png](apigw-dataflow-png-4.png)

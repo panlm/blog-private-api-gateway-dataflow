@@ -804,6 +804,7 @@ aws acm describe-certificate \
 ```sh
 NS=verify
 kubectl create ns ${NS}
+
 ```
 
 - 通过服务定义创建 NLB
@@ -985,17 +986,22 @@ spec:
 EOF
 
 kubectl create --filename httpbin.yaml -n httpbin
+
 ```
+
+^ms80u8
 
 - 等待 ALB 可用后，验证应用从外部可以正常访问
 ```sh
 curl https://httpbin.${DOMAIN_NAME}/anything
+
 ```
 
 - 我们将更新 Ingress 配置，将该 ALB 类型从 Internet-facing 改为 Internal，作为 API Gateway 的下游的 HTTP Endpoint
 ```sh
 sed -i 's/internet-facing/internal/' httpbin.yaml
 kubectl apply --filename httpbin.yaml -n httpbin
+
 ```
 
 ### API Gateway
@@ -1083,6 +1089,7 @@ aws elbv2 create-rule --listener-arn ${listener_arn} \
 --conditions file:///tmp/path-pattern.json \
 --priority 5 \
 --actions Type=forward,TargetGroupArn=${tg1_arn}
+
 ```
 
 **Route53** 
@@ -1119,6 +1126,7 @@ ZONE_ID=$(aws route53 list-hosted-zones-by-name \
 aws route53 change-resource-record-sets --hosted-zone-id ${ZONE_ID} --change-batch file://poc-route53-record.json
 
 aws route53 list-resource-record-sets --hosted-zone-id ${ZONE_ID} --query "ResourceRecordSets[?Name == '${POC_HOSTNAME}.']"
+
 ```
 
 #### 步骤 4 -- API Gateway VPCE
@@ -1156,6 +1164,7 @@ done |xargs )
 aws elbv2 register-targets \
 --target-group-arn ${tg1_arn} \
 --targets ${targets}
+
 ```
 
 #### 步骤 5-7 -- VPC Link
@@ -1209,6 +1218,7 @@ aws elbv2 create-listener --load-balancer-arn ${nlb1_arn} \
 watch -g -n 60 aws elbv2 describe-load-balancers \
 --load-balancer-arns ${nlb1_arn} \
 --query 'LoadBalancers[0].State'
+
 ```
 
 - 等待 NLB 状态可用后，创建 VPC Link
@@ -1222,6 +1232,7 @@ VPCLINK_ID=$(cat /tmp/$$.6 |jq -r '.id')
 watch -g -n 60 aws apigateway get-vpc-link \
 --vpc-link-id ${VPCLINK_ID} \
 --query 'status'
+
 ```
 
 ####  步骤 9-10 -- Private API / Custom Domain Name / Access Logging
@@ -1331,6 +1342,7 @@ API_ID=$(cat /tmp/$$.7 |jq -r '.id')
 
 aws apigateway create-deployment \
 --rest-api-id ${API_ID} --stage-name v1 
+
 ```
 
 **Custom Domain Name**
@@ -1350,6 +1362,7 @@ aws apigateway create-base-path-mapping \
 --rest-api-id ${API_ID} \
 --stage v1 \
 --base-path "${URI_PREFIX}"
+
 ```
 
 **Custom Access Logging**
@@ -1389,6 +1402,7 @@ echo ${role_arn}
 # copy above output
 # add role to api gateway settings
 ###
+
 ```
 
 - 创建专用 CloudWatch 日志组
@@ -1400,6 +1414,7 @@ LOGGROUP_ARN=$(aws logs describe-log-groups \
 --log-group-name-prefix ${LOGGROUP_NAME} \
 --query 'logGroups[0].arn' --output text)
 LOGGROUP_ARN=${LOGGROUP_ARN%:*}
+
 ```
 
 - 更新现有 API 的 Stage 配置，定制 Access Log 日志输出格式
@@ -1431,6 +1446,7 @@ aws apigateway update-stage \
 --rest-api-id $API_ID \
 --stage-name v1 \
 --cli-input-json file://access-log-settings.json
+
 ```
 
 #### 步骤 12 -- 验证
@@ -1439,6 +1455,7 @@ aws apigateway update-stage \
 - 从其他设备浏览器访问下面链接时，将请求 API `/httpbin`。该 API 启用 `Use Proxy Integration` 
 ```sh
 echo "curl https://${POC_HOSTNAME}/${URI_PREFIX}/httpbin"
+
 ```
 
 ![apigw-dataflow-png-3.png](apigw-dataflow-png-3.png)
@@ -1453,6 +1470,7 @@ echo "curl https://${POC_HOSTNAME}/${URI_PREFIX}/httpbin"
 - 从其他设备浏览器访问下面链接时，将请求 API `/httpbin/{proxy+}`。该 API 未启用 `Use Proxy Integration`，原因是我们需要传递自定义标头到下游应用中使用
 ```sh
 echo "curl https://${POC_HOSTNAME}/${URI_PREFIX}/httpbin/anything"
+
 ```
 
 ![apigw-dataflow-png-4.png](apigw-dataflow-png-4.png)
