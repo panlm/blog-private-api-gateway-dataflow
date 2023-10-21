@@ -3,9 +3,9 @@ title: 私有 API 在企业场景中的应用
 description: 私有 API 在企业场景中的应用
 chapter: true
 created: 2023-03-15 11:49:27.324
-last_modified: 2023-05-04 08:48:07.786
-tags: 
-- aws/serverless/api-gateway 
+last_modified: 2023-10-21 11:46:01.090
+tags:
+  - aws/serverless/api-gateway
 ---
 
 ```ad-attention
@@ -94,7 +94,7 @@ Amazon API Gateway 可以直接暴露到公网访问，无需前置任何负载�
 - 8 - （可选）使用 Lambda 验证鉴权。一旦鉴权成功，便可从上下文中获取到必要的信息 ([链接](https://docs.aws.amazon.com/apigateway/latest/developerguide/api-gateway-mapping-template-reference.html#context-variable-reference:~:text=context.authorizer.property))。比如，使用 Lambda 鉴权请求中自带的 Access Token，成功之后可以从 Access Token 中获取到用户具体详情，作为 header 提供下游应用直接使用；
 - 9 - 请求发送到内部应用 ALB 时（确保只使用标准 TLD 域名，参考[链接](https://en.wikipedia.org/wiki/List_of_Internet_top-level_domains)），ALB 使用的证书是自签名证书，且提前导入到 ACM 中（未包含完整证书链），这样的证书使用在 ALB 上是没问题的，但是作为 API Gateway 下游请求的话，则会遇到问题；
 	- 首先，API Gateway 默认无法验证自签名证书，除非启用 `tlsConfig/insecureSkipVerification` ([链接](https://aws.amazon.com/premiumsupport/knowledge-center/api-gateway-ssl-certificate-errors/))，且启用后也仅验证包含完整证书链的自签名证书；
-	- 其次， 每个 API 的每个 Resource 的每个 Method 都需要单独通过命令行启用，通过这个脚本简化工作 ([链接](http://aws-labs.panlm.xyz/900-others/990-command-line/script-api-resource-method.html))。另外，可以通过导出带 `API Gateway extensions` 的格式修改，并重新导入覆盖；
+	- 其次， 每个 API 的每个 Resource 的每个 Method 都需要单独通过命令行启用，通过这个脚本简化工作 ([链接](https://github.com/panlm/blog-private-api-gateway-dataflow/blob/main/enable-tls-insecure-skip-verification-api-resource-method.md))。另外，可以通过导出带 `API Gateway extensions` 的格式修改，并重新导入覆盖；
 - 10 - 导入其他需要测试的 API ，提前提升上限 `Resources per API` （默认 300，详见[链接](https://docs.aws.amazon.com/apigateway/latest/developerguide/limits.html)）；
 - 11 - 应用 ALB，证书需要满足步骤 9；
 - 12 - 验证，通过测试域名 `poc.api0413.aws.panlm.xyz` 直接访问私有 API；
@@ -122,7 +122,7 @@ Amazon API Gateway 可以直接暴露到公网访问，无需前置任何负载�
 本文使用 AWS Global 的账号，在区域 us-east-2 中搭建。按照下面步骤创建所需的资源。
 
 #### 准备 AWS Cloud9 实验环境 
-(参考[链接](http://aws-labs.panlm.xyz/20-cloud9/setup-cloud9-for-eks.html))
+(参考[链接](https://panlm.github.io/cloud9/setup-cloud9-for-eks/))
 
 -  点击[这里](https://us-east-2.console.aws.amazon.com/cloudshell) 运行 cloudshell，执行代码块创建 cloud9 测试环境 
 ```sh
@@ -159,6 +159,9 @@ else
 fi
 
 ```
+
+^11d011
+
 - 点击输出的 URL 链接，打开 cloud9 测试环境
 
 - 下面代码块包含一些基本设置，包括：
@@ -369,7 +372,7 @@ aws sts get-caller-identity
 ```
 
 #### 创建 EKS 集群
-创建 EKS 集群，名为 `ekscluster1` ([链接](http://aws-labs.panlm.xyz/100-eks-infra/110-eks-cluster/eks-public-access-cluster.html#create-eks-cluster))
+创建 EKS 集群，名为 `ekscluster1` ([链接](https://panlm.github.io/EKS/infra/cluster/eks-public-access-cluster/#create-eks-cluster))
 
 - 将在下面区域创建 EKS 集群 
 ```sh
@@ -476,7 +479,7 @@ eksctl create cluster -f cluster-${CLUSTER_NAME}.yaml
 ```
 
 #### 安装 AWS Load Balancer Controller 
-([链接](http://aws-labs.panlm.xyz/100-eks-infra/130-eks-network/aws-load-balancer-controller.html#install-))
+([链接](https://panlm.github.io/EKS/infra/network/aws-load-balancer-controller/#install-))
 
 - Install AWS Load Balancer Controller
 ```sh
@@ -554,7 +557,7 @@ kubectl get deployment -n kube-system aws-load-balancer-controller
 ```
 
 #### 安装 ExternalDNS 
-([链接](http://aws-labs.panlm.xyz/100-eks-infra/130-eks-network/externaldns-for-route53.html#install-))
+([链接](https://panlm.github.io/EKS/infra/network/externaldns-for-route53/#install-))
 
 - 创建所需要的服务账号
 	- 确保 EKS 集群名称正确 
@@ -712,7 +715,7 @@ kubectl create --filename externaldns-with-rbac.yaml \
 ```
 
 #### 设置 Hosted Zone
-首先确保你有自己域名和域名服务器 (Domain Registrar)，然后在当前测试账号的 Route53 下创建 Hosted Zone，并且在上游域名服务器添加该 Hosted Zone 的 NS 记录，以实现二级域名解析 ([链接](http://aws-labs.panlm.xyz/100-eks-infra/130-eks-network/externaldns-for-route53.html#setup-hosted-zone-))
+首先确保你有自己域名和域名服务器 (Domain Registrar)，然后在当前测试账号的 Route53 下创建 Hosted Zone，并且在上游域名服务器添加该 Hosted Zone 的 NS 记录，以实现二级域名解析 ([链接](https://panlm.github.io/EKS/infra/network/externaldns-for-route53/#setup-hosted-zone-))
 
 - 本例中将创建 `api0413.aws.panlm.xyz` 域名，因此确保 `aws.panlm.xyz` 已存在
 -  执行下面命令创建 Hosted Zone， 然后手工添加 NS 记录到上游的域名服务器 domain registrar 中 
@@ -738,7 +741,7 @@ aws route53 list-resource-record-sets --output text \
 ```
 
 #### 创建相关证书
-在 ACM 中创建带有通配符的证书，然后在 Route53 中添加相应的 DNS 记录以验证证书有效性 ([链接](http://aws-labs.panlm.xyz/900-others/990-command-line/acm-cmd.html#create-certificate-))
+在 ACM 中创建带有通配符的证书，然后在 Route53 中添加相应的 DNS 记录以验证证书有效性 ([链接](https://panlm.github.io/CLI/acm-cmd/#create-certificate-))
 
 - 创建并通过添加 dns 记录验证证书 
 ```sh
@@ -798,7 +801,7 @@ aws acm describe-certificate \
 ```
 
 #### 验证环境就绪
-验证应用发布可用以及证书有效 ([链接](http://aws-labs.panlm.xyz/100-eks-infra/130-eks-network/externaldns-for-route53.html#verify))，如果验证成功，可以从 EKS 集群中删除名为 `verify`  的命名空间
+验证应用发布可用以及证书有效 ([链接](https://panlm.github.io/EKS/infra/network/externaldns-for-route53/#verify))，如果验证成功，可以从 EKS 集群中删除名为 `verify`  的命名空间
 
 - 创建命名空间 
 ```sh

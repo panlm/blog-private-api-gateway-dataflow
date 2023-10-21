@@ -1,3 +1,6 @@
+---
+last_modified: 2023-10-21 11:55:17.321
+---
 
 ## 私有 API 在企业场景中的应用 - 沿用安全组件
 
@@ -6,7 +9,7 @@
 ### aws blog (released: 2023/05/08)
 - https://aws.amazon.com/cn/blogs/china/private-api-gateway-in-enterprise-scenarios/
 
-### github (updated: 2023/08/20)
+### github (updated: 2023/10/20)
 - [Private API Scenarios in Enterprise Customers（中文版）](TC-private-apigw-dataflow.md)
 - [Private API Scenarios in Enterprise Customers （English）](TC-private-apigw-dataflow-en.md)
 

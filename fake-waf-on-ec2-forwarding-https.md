@@ -3,7 +3,7 @@ title: fake-waf-on-ec2-forwarding-https
 description: 使用 NGINX 模拟 WAF 转发 HTTPS 请求
 chapter: true
 created: 2023-07-17 16:02:12.084
-last_modified: 2023-10-11 10:06:49.890
+last_modified: 2023-10-21 11:54:26.534
 tags:
   - aws/security/waf
   - aws/serverless/api-gateway
@@ -57,7 +57,7 @@ patch -p1 < ../ngx_http_proxy_connect_module/patch/proxy_connect_rewrite_102101.
 --add-module=../ngx_http_proxy_connect_module
 make && make install
 ```
-- create cerntificate in `/usr/local/nginx/conf` ([[self-signed-certificates#2. no certificate chain]] or [link](http://aws-labs.panlm.xyz/100-eks-infra/130-eks-network/self-signed-certificates.html#2-no-certificate-chain))
+- create cerntificate in `/usr/local/nginx/conf` ([[../git-ghpages/eks/eks-infra/network/self-signed-certificates#2. no certificate chain]] or [link](https://panlm.github.io/EKS/infra/network/self-signed-certificates/#2-no-certificate-chain-))
 ```sh
 mkdir ~/cert
 cd ~/cert
